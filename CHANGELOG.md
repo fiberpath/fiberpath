@@ -8,6 +8,20 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+### Security
+
+- Hardened API path policy (`enforce_input_path_policy`) to reject absolute paths (POSIX `/`, Windows drive `C:\`, UNC `\\`), NUL bytes, `..` traversal segments, and empty/whitespace inputs with 400 before any filesystem access. Resolved CodeQL alert #9 ("Uncontrolled data used in path expression").
+
+### Changed
+
+- API file endpoints now require relative paths; the configured `FIBERPATH_API_ALLOWED_ROOTS` controls which directories they resolve against.
+- Rebuilt user-supplied paths from validated components (`Path(*parts)`) instead of passing raw input to `Path()`, breaking the taint chain for static analysis.
+
+### Added
+
+- `tests/api/test_path_policy.py` — 18 dedicated tests covering all rejected input classes (NUL bytes, POSIX absolute, Windows drive/UNC, `..` traversal with forward and backslash separators, empty/whitespace, absolute-inside-root) and accepted cases (bare filename, nested relative, multiple roots, single-dot normalisation).
+- Integration-level rejection tests in `test_plan_route.py` and `test_simulate_route.py` for absolute-path and traversal inputs.
+
 ## [0.7.1] - 2026-04-16
 
 ### Added
