@@ -44,17 +44,20 @@ def _resolve_user_path(user_path: str, roots: list[Path]) -> Path:
     normalized = os.path.normpath(expanded)
     if normalized in ("", "."):
         raise HTTPException(status_code=400, detail="Path must not be empty")
-    if normalized == ".." or normalized.startswith(f"..{os.sep}") or normalized.startswith("../") or normalized.startswith("..\\"):
-        raise HTTPException(status_code=400, detail="Path traversal is not allowed")
+    if os.path.isabs(normalized):
+        raise HTTPException(status_code=400, detail="Absolute paths are not allowed")
 
     candidate = Path(normalized)
 
     # Relative paths are resolved from each allowed root in order.
-    # Pick the first candidate that is within a root.
+    # Pick the first candidate that remains within that same root.
     for root in roots:
         resolved = (root / candidate).resolve(strict=False)
-        if _is_within_roots(resolved, roots):
+        try:
+            resolved.relative_to(root.resolve(strict=False))
             return resolved
+        except ValueError:
+            continue
 
     # None of the root-relative candidates were within a root.
     roots_str = ", ".join(str(root) for root in roots)
