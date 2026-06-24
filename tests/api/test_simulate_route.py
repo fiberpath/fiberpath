@@ -74,3 +74,21 @@ def test_simulate_from_file_rejects_absolute_path(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "absolute" in response.json()["detail"].lower()
+
+
+def test_simulate_from_file_simulation_error_returns_400(tmp_path: Path) -> None:
+    """An empty program raises SimulationError, mapped to 400 (not 500)."""
+    import os
+
+    app = create_app()
+    client = TestClient(app)
+    os.environ["FIBERPATH_API_ALLOWED_ROOTS"] = str(tmp_path)
+
+    empty = tmp_path / "empty.gcode"
+    empty.write_text("", encoding="utf-8")
+
+    response = client.post("/simulate/from-file", json={"path": "empty.gcode"})
+
+    assert response.status_code == 400, response.text
+    assert response.status_code != 500
+    assert "empty" in response.json()["detail"].lower()

@@ -92,3 +92,29 @@ def test_plan_route_rejects_traversal_path(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "traversal" in response.json()["detail"].lower()
+
+
+def test_plan_route_validation_error_returns_400(tmp_path: Path) -> None:
+    """A wind file that loads but fails layer validation returns 400, not 500."""
+    import os
+
+    # windAngle 95 is a valid PositiveFloat (passes schema) but is rejected by
+    # validate_layer_numeric_bounds (must be 1-89 deg) -> LayerValidationError.
+    wind = tmp_path / "bad.wind"
+    wind.write_text(
+        (
+            '{"layers":[{"windType":"helical","windAngle":95.0,"patternNumber":1,'
+            '"skipIndex":1,"lockDegrees":180.0,"leadInMM":10.0,"leadOutDegrees":90.0}],'
+            '"mandrelParameters":{"diameter":50.0,"windLength":500.0},'
+            '"towParameters":{"width":8.0,"thickness":0.4},"defaultFeedRate":6000.0}'
+        ),
+        encoding="utf-8",
+    )
+
+    os.environ["FIBERPATH_API_ALLOWED_ROOTS"] = str(tmp_path)
+    client = TestClient(create_app())
+    response = client.post("/plan/from-file", json={"path": "bad.wind"})
+
+    assert response.status_code == 400, response.text
+    assert response.status_code != 500
+    assert "wind angle" in response.json()["detail"].lower()

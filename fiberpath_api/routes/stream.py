@@ -10,7 +10,11 @@ router = APIRouter()
 
 
 class StreamRequest(BaseModel):
-    gcode: str = Field(..., description="Raw G-code to stream, newline separated.")
+    gcode: str = Field(
+        ...,
+        max_length=10_000_000,
+        description="Raw G-code to stream, newline separated.",
+    )
     port: str | None = Field(
         default=None,
         description="Serial port or pyserial URL. Required when dry_run is false.",
