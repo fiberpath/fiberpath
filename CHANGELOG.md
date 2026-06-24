@@ -11,16 +11,44 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 ### Security
 
 - Hardened API path policy (`enforce_input_path_policy`) to reject absolute paths (POSIX `/`, Windows drive `C:\`, UNC `\\`), NUL bytes, `..` traversal segments, and empty/whitespace inputs with 400 before any filesystem access. Resolved CodeQL alert #9 ("Uncontrolled data used in path expression").
+- Patched `starlette` CVE-2026-48710 (BadHost) by upgrading to a fixed release.
+- Cleared the GUI dev-tree advisories `js-yaml` (GHSA-h67p-54hq-rp68, merge-key DoS → 4.2.0) and `undici` (GHSA-vmh5-mc38-953g and related → 7.28.0). Both are dev-only; the shipped application is unaffected.
+- Bumped `rand` to 0.8.6 (GHSA-cq8v-f236-94qc). A residual, build-time-only `rand` 0.7.3 is pinned upstream in the Tauri toolchain with no available fix and is tracked in `TODO.md`.
 
 ### Changed
 
 - API file endpoints now require relative paths; the configured `FIBERPATH_API_ALLOWED_ROOTS` controls which directories they resolve against.
 - Rebuilt user-supplied paths from validated components (`Path(*parts)`) instead of passing raw input to `Path()`, breaking the taint chain for static analysis.
+- API plan/simulate routes map core-engine input errors (`PlanningError`, `SimulationError`) to HTTP 400 via centralized exception handlers instead of surfacing them as 500s, and `/stream` caps the G-code payload at 10 MB.
+- Routed streaming `[DEBUG]`/`[ERROR]` output through the `logging` module instead of `print(..., file=sys.stderr)`, so a normal run is quiet by default while the stdout JSON protocol is unchanged.
+- Upgraded Tauri to 2.11 (Cargo + npm aligned) and refreshed CI actions.
+
+### Fixed
+
+- `MarlinStreamer` transport guards now raise `StreamError` instead of `assert`, so they behave identically under `python -O` rather than degrading to a `None` dereference.
+- Tauri `plot_definition`, `plot_preview`, and `validate_wind_definition` no longer leak temporary `.wind`/`.gcode`/`.png` files on error paths; an RAII guard removes them on every exit.
+
+### Removed
+
+- Removed the unused `fiberpath/geometry/` stub module (dead code advertising non-cylindrical capability that does not exist; the roadmap is documented instead).
+- Removed dead branches in `planning/layer_strategies.py` (a no-op `build_layer_summary` conditional and an unreachable circuit-divisibility guard superseded by upstream validation).
 
 ### Added
 
 - `tests/api/test_path_policy.py` — 18 dedicated tests covering all rejected input classes (NUL bytes, POSIX absolute, Windows drive/UNC, `..` traversal with forward and backslash separators, empty/whitespace, absolute-inside-root) and accepted cases (bare filename, nested relative, multiple roots, single-dot normalisation).
 - Integration-level rejection tests in `test_plan_route.py` and `test_simulate_route.py` for absolute-path and traversal inputs.
+- Tests for API error-to-4xx mapping, `MarlinStreamer` transport guards (including a `python -O` subprocess check), streaming logging staying quiet by default, and the Tauri temp-file cleanup guard.
+
+### Documentation
+
+- Aligned the README and architecture docs with the implemented scope (cylindrical mandrels; hoop/helical/skip layers), framed geodesic/curved-surface support as roadmap, and removed the stale `examples/complex_surface/` placeholder.
+
+### Dependencies
+
+- Tooling/CI: `astral-sh/setup-uv` v8.2.0 (Node 24), `codecov/codecov-action` v7, `actions/checkout` v7.
+- Python (uv): `starlette` 1.3.1, `urllib3` 2.7.0, `idna` 3.15, `pymdown-extensions` 10.21.3.
+- npm: `@types/node` 26, `lucide-react`, `fast-uri` 3.1.2, plus the npm prod and dev minor-patch dependency groups.
+- Cargo: the cargo minor-patch dependency groups.
 
 ## [0.7.1] - 2026-04-16
 
