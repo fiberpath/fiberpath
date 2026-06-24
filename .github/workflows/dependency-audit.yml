@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Python environment
         uses: ./.github/actions/setup-python
@@ -46,7 +46,7 @@ jobs:
         working-directory: fiberpath_gui
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js environment
         uses: ./.github/actions/setup-node
@@ -69,7 +69,7 @@ jobs:
         working-directory: fiberpath_gui/src-tauri
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust environment
         uses: ./.github/actions/setup-rust
