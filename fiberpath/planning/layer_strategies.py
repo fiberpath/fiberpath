@@ -23,10 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def build_layer_summary(index: int, total: int, layer: LayerModel) -> str:
-    base = f"Layer {index} of {total}: {layer.wind_type}"
-    if isinstance(layer, HelicalLayer):
-        return base
-    return base
+    return f"Layer {index} of {total}: {layer.wind_type}"
 
 
 def dispatch_layer(
@@ -122,14 +119,6 @@ def plan_helical_layer(
     ]
 
     LOGGER.debug("Helical wind with %s circuits", num_circuits)
-
-    if num_circuits % pattern_number != 0:
-        LOGGER.warning(
-            "Skipping helical layer: %s circuits not divisible by pattern %s",
-            num_circuits,
-            pattern_number,
-        )
-        return
 
     if not layer.skip_initial_near_lock:
         machine.move({Axis.CARRIAGE: 0.0, Axis.MANDREL: lock_degrees, Axis.DELIVERY_HEAD: 0.0})
