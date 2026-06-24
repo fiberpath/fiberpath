@@ -235,3 +235,25 @@ def test_transport_guard_raises_under_optimized_python() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "OK" in result.stdout
+
+
+def test_pause_resume_emit_no_debug_noise_on_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A normal stream/pause/resume cycle produces no debug output by default.
+
+    The streaming code logs via `logging.debug`; with no handler configured the
+    messages stay silent. Before #102 these were `print(..., file=sys.stderr)`
+    calls, so this is a regression guard for the logging migration.
+    """
+    transport = DummyTransport()
+    streamer = MarlinStreamer(transport=transport)
+
+    list(streamer.iter_stream(["G0 X1"]))
+    streamer.pause()
+    streamer.resume()
+
+    captured = capsys.readouterr()
+    assert "[DEBUG]" not in captured.err
+    assert "[DEBUG]" not in captured.out
+    assert captured.err == ""

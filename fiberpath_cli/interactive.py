@@ -42,6 +42,7 @@ Example:
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import sys
 import threading
@@ -50,6 +51,8 @@ from typing import Any
 
 import serial.tools.list_ports
 from fiberpath.execution import MarlinStreamer, StreamError, StreamProgress
+
+LOGGER = logging.getLogger(__name__)
 
 
 class StreamingSession:
@@ -390,7 +393,7 @@ def interactive_mode() -> None:
                             send_response({"status": "disconnected", "reason": "fatal_error"})
 
                 elif action == "pause":
-                    print("[DEBUG] Pause command received", file=sys.stderr, flush=True)
+                    LOGGER.debug("Pause command received")
                     if streamer is None or not streamer.is_connected:
                         send_error("Not connected to Marlin", "NOT_CONNECTED", request_id)
                         continue
@@ -400,20 +403,16 @@ def interactive_mode() -> None:
                         continue
 
                     try:
-                        print("[DEBUG] Calling streamer.pause()", file=sys.stderr, flush=True)
+                        LOGGER.debug("Calling streamer.pause()")
                         streamer.pause()
-                        print(
-                            "[DEBUG] Pause successful, sending response",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        LOGGER.debug("Pause successful, sending response")
                         send_response({"status": "paused"}, request_id)
                     except StreamError as e:
-                        print(f"[DEBUG] Pause failed with error: {e}", file=sys.stderr, flush=True)
+                        LOGGER.debug("Pause failed with error: %s", e)
                         send_error(f"Pause failed: {e}", "PAUSE_FAILED", request_id)
 
                 elif action == "resume":
-                    print("[DEBUG] Resume command received", file=sys.stderr, flush=True)
+                    LOGGER.debug("Resume command received")
                     if streamer is None or not streamer.is_connected:
                         send_error("Not connected to Marlin", "NOT_CONNECTED", request_id)
                         continue
@@ -423,30 +422,22 @@ def interactive_mode() -> None:
                         continue
 
                     try:
-                        print("[DEBUG] Calling streamer.resume()", file=sys.stderr, flush=True)
+                        LOGGER.debug("Calling streamer.resume()")
                         streamer.resume()
-                        print(
-                            "[DEBUG] Resume successful, sending response",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        LOGGER.debug("Resume successful, sending response")
                         send_response({"status": "resumed"}, request_id)
                     except StreamError as e:
-                        print(f"[DEBUG] Resume failed with error: {e}", file=sys.stderr, flush=True)
+                        LOGGER.debug("Resume failed with error: %s", e)
                         send_error(f"Resume failed: {e}", "RESUME_FAILED", request_id)
 
                 elif action == "cancel":
-                    print("[DEBUG] Cancel command received", file=sys.stderr, flush=True)
+                    LOGGER.debug("Cancel command received")
                     if not streaming_session or not streaming_session.is_alive():
                         send_error("Not currently streaming", "NOT_STREAMING", request_id)
                         continue
 
                     try:
-                        print(
-                            "[DEBUG] Requesting cancel (clean exit, stay connected)",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        LOGGER.debug("Requesting cancel (clean exit, stay connected)")
                         streaming_session.request_stop()
 
                         # Wait for worker thread to exit gracefully
@@ -456,23 +447,19 @@ def interactive_mode() -> None:
                         # CRITICAL: Reset pause flag so next stream can run
                         # Without this, streamer._paused stays True and blocks
                         if streamer:
-                            print(
-                                "[DEBUG] Resetting streamer pause flag",
-                                file=sys.stderr,
-                                flush=True,
-                            )
+                            LOGGER.debug("Resetting streamer pause flag")
                             streamer._paused = False
 
-                        print("[DEBUG] Sending cancelled response", file=sys.stderr, flush=True)
+                        LOGGER.debug("Sending cancelled response")
                         send_response({"status": "cancelled"}, request_id)
                         streaming_session = None
                     except Exception as e:
-                        print(f"[DEBUG] Cancel error: {e}", file=sys.stderr, flush=True)
+                        LOGGER.debug("Cancel error: %s", e)
                         send_error(f"Cancel failed: {e}", "CANCEL_FAILED", request_id)
                         streaming_session = None
 
                 elif action == "stop":
-                    print("[DEBUG] Stop command received", file=sys.stderr, flush=True)
+                    LOGGER.debug("Stop command received")
                     if streamer is None or not streamer.is_connected:
                         send_error("Not connected to Marlin", "NOT_CONNECTED", request_id)
                         continue
@@ -482,29 +469,21 @@ def interactive_mode() -> None:
                         continue
 
                     try:
-                        print(
-                            "[DEBUG] Requesting stop and sending M112",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        LOGGER.debug("Requesting stop and sending M112")
                         streaming_session.request_stop()
 
                         # Send M112 emergency stop - it halts Marlin and closes connection
-                        print(
-                            "[DEBUG] Calling streamer.emergency_stop()",
-                            file=sys.stderr,
-                            flush=True,
-                        )
+                        LOGGER.debug("Calling streamer.emergency_stop()")
                         streamer.emergency_stop()
 
-                        print("[DEBUG] Sending stopped response", file=sys.stderr, flush=True)
+                        LOGGER.debug("Sending stopped response")
                         send_response({"status": "stopped", "disconnected": True}, request_id)
 
                         if streaming_session.thread:
                             streaming_session.thread.join(timeout=1.0)
                         streaming_session = None
                     except Exception as e:
-                        print(f"[DEBUG] Stop error: {e}", file=sys.stderr, flush=True)
+                        LOGGER.debug("Stop error: %s", e)
                         if streamer:
                             streamer.close()
                         send_response({"status": "stopped", "disconnected": True}, request_id)

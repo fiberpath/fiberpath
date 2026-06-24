@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from typing import Protocol
 
 DEFAULT_BAUD_RATE = 250_000
 DEFAULT_RESPONSE_TIMEOUT = 10.0  # Allow time for slow moves (e.g., large rotations)
+
+LOGGER = logging.getLogger(__name__)
 
 
 class StreamError(RuntimeError):
@@ -150,8 +153,6 @@ class MarlinStreamer:
             commands: G-code command sequence to stream.
             dry_run: If True, skip serial I/O and just report progress.
         """
-        import sys
-
         # Load and sanitize commands
         self.load_program(commands)
 
@@ -161,11 +162,7 @@ class MarlinStreamer:
         while self._cursor < len(self._program):
             # Check if paused - block until resumed
             while self._paused:
-                print(
-                    "[DEBUG] iter_stream - paused, waiting...",
-                    file=sys.stderr,
-                    flush=True,
-                )
+                LOGGER.debug("iter_stream - paused, waiting...")
                 time.sleep(0.1)  # Check every 100ms
 
             line = self._program[self._cursor]
@@ -202,12 +199,10 @@ class MarlinStreamer:
         Note: M0 causes Marlin to pause and NOT send 'ok' until resumed.
         We send the command without waiting for ok to avoid timeout.
         """
-        import sys
-
         if self._paused:
             raise StreamError("Stream is already paused")
 
-        print("[DEBUG] MarlinStreamer.pause() - setting paused flag", file=sys.stderr, flush=True)
+        LOGGER.debug("MarlinStreamer.pause() - setting paused flag")
         # Set paused flag FIRST to stop Python from sending more commands
         self._paused = True
 
@@ -216,13 +211,9 @@ class MarlinStreamer:
             raise StreamError("Serial transport is not connected")
 
         # Then send M0 to pause Marlin's execution of buffered commands
-        print("[DEBUG] MarlinStreamer.pause() - sending M0", file=sys.stderr, flush=True)
+        LOGGER.debug("MarlinStreamer.pause() - sending M0")
         self._transport.write_line("M0")
-        print(
-            "[DEBUG] MarlinStreamer.pause() - M0 sent, streaming blocked",
-            file=sys.stderr,
-            flush=True,
-        )
+        LOGGER.debug("MarlinStreamer.pause() - M0 sent, streaming blocked")
 
     def resume(self) -> None:
         """Resume streaming by clearing the paused flag.
@@ -239,12 +230,10 @@ class MarlinStreamer:
         2. Resume execution of buffered commands
         3. Eventually send another 'ok' for the M108
         """
-        import sys
-
         if not self._paused:
             raise StreamError("Stream is not paused")
 
-        print("[DEBUG] MarlinStreamer.resume() - sending M108", file=sys.stderr, flush=True)
+        LOGGER.debug("MarlinStreamer.resume() - sending M108")
         self._ensure_connection()
         if self._transport is None:
             raise StreamError("Serial transport is not connected")
@@ -254,37 +243,17 @@ class MarlinStreamer:
 
         # Wait for the pending 'ok' from M0
         try:
-            print(
-                "[DEBUG] MarlinStreamer.resume() - waiting for M0's ok",
-                file=sys.stderr,
-                flush=True,
-            )
+            LOGGER.debug("MarlinStreamer.resume() - waiting for M0's ok")
             self._await_ok()  # This gets the 'ok' from M0
-            print(
-                "[DEBUG] MarlinStreamer.resume() - got M0's ok",
-                file=sys.stderr,
-                flush=True,
-            )
+            LOGGER.debug("MarlinStreamer.resume() - got M0's ok")
         except StreamError as e:
-            print(
-                f"[DEBUG] MarlinStreamer.resume() - error waiting for ok: {e}",
-                file=sys.stderr,
-                flush=True,
-            )
+            LOGGER.debug("MarlinStreamer.resume() - error waiting for ok: %s", e)
             # Continue anyway - the resume might have worked
 
         # Clear paused flag to allow iter_stream to continue
-        print(
-            "[DEBUG] MarlinStreamer.resume() - clearing paused flag",
-            file=sys.stderr,
-            flush=True,
-        )
+        LOGGER.debug("MarlinStreamer.resume() - clearing paused flag")
         self._paused = False
-        print(
-            "[DEBUG] MarlinStreamer.resume() - streaming unblocked",
-            file=sys.stderr,
-            flush=True,
-        )
+        LOGGER.debug("MarlinStreamer.resume() - streaming unblocked")
 
     def emergency_stop(self) -> None:
         """Send M112 emergency stop and close connection.
@@ -292,9 +261,7 @@ class MarlinStreamer:
         M112 causes Marlin to halt immediately and not send 'ok'.
         After M112, the connection is unusable and must be closed.
         """
-        import sys
-
-        print("[DEBUG] MarlinStreamer.emergency_stop() - sending M112", file=sys.stderr, flush=True)
+        LOGGER.debug("MarlinStreamer.emergency_stop() - sending M112")
         self._ensure_connection()
         if self._transport is None:
             raise StreamError("Serial transport is not connected")
@@ -303,11 +270,7 @@ class MarlinStreamer:
         self._transport.write_line("M112")
 
         # Close connection - Marlin is halted and won't respond
-        print(
-            "[DEBUG] MarlinStreamer.emergency_stop() - M112 sent, closing connection",
-            file=sys.stderr,
-            flush=True,
-        )
+        LOGGER.debug("MarlinStreamer.emergency_stop() - M112 sent, closing connection")
         self.close()
 
     def reset_progress(self) -> None:
@@ -441,8 +404,6 @@ class MarlinStreamer:
 
     def _await_ok(self) -> list[str]:
         """Wait for 'ok' response and return all intermediate lines."""
-        import sys
-
         if self._transport is None:
             raise StreamError("Serial transport is not connected")
         deadline = time.monotonic() + self._response_timeout
@@ -451,10 +412,8 @@ class MarlinStreamer:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                print(
-                    f"[ERROR] Timeout waiting for Marlin response after {self._response_timeout}s",
-                    file=sys.stderr,
-                    flush=True,
+                LOGGER.error(
+                    "Timeout waiting for Marlin response after %ss", self._response_timeout
                 )
                 raise StreamError("Timed out waiting for Marlin response")
             line = self._transport.readline(remaining)
@@ -471,7 +430,7 @@ class MarlinStreamer:
                 continue
             if line.startswith("Error") or "kill()" in line.lower() or "halted" in line.lower():
                 # Fatal error detected - mark connection as broken
-                print(f"[ERROR] Marlin fatal error: {line}", file=sys.stderr, flush=True)
+                LOGGER.error("Marlin fatal error: %s", line)
                 self._connected = False
                 self._startup_handled = False
                 raise StreamError(f"Marlin reported: {line}")
