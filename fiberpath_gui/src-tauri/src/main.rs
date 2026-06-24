@@ -75,7 +75,14 @@ async fn plot_preview(
     scale: f64,
     output_path: Option<String>,
 ) -> Result<PlotPreview, String> {
-    let output_file = output_path.unwrap_or_else(|| temp_path("png"));
+    // Keep a caller-supplied output path; auto-clean an internally generated temp PNG.
+    let (output_file, _output_temp) = match output_path {
+        Some(path) => (path, None),
+        None => {
+            let temp = TempFile::new("png");
+            (temp.path().to_string(), Some(temp))
+        }
+    };
     let args = vec![
         "plot".into(),
         gcode_path,
@@ -132,21 +139,21 @@ async fn plot_definition(
 ) -> Result<PlotPreview, String> {
     let mut warnings = Vec::new();
 
-    // Create temporary .wind file
-    let wind_file = temp_path("wind");
-    fs::write(&wind_file, &definition_json).map_err(|err| {
+    // Create temporary .wind file (auto-cleaned on drop, including error paths)
+    let wind_file = TempFile::new("wind");
+    fs::write(wind_file.path(), &definition_json).map_err(|err| {
         FiberpathError::File(format!("Failed to write temp .wind file: {err}")).to_string()
     })?;
 
     // Create temporary .gcode file
-    let gcode_file = temp_path("gcode");
+    let gcode_file = TempFile::new("gcode");
 
     // First, run plan to convert .wind to .gcode
     let plan_args = vec![
         "plan".into(),
-        wind_file.clone(),
+        wind_file.path().to_string(),
         "--output".into(),
-        gcode_file.clone(),
+        gcode_file.path().to_string(),
     ];
     let plan_output = exec_fiberpath(app.clone(), plan_args)
         .await
@@ -162,13 +169,21 @@ async fn plot_definition(
         }
     }
 
-    // Generate output path for PNG
-    let output_file = output_path.unwrap_or_else(|| temp_path("png"));
+    // Generate output path for PNG. When the caller supplies an output_path it
+    // is a user-chosen destination and must be kept; only an internally
+    // generated temp PNG is wrapped in a cleanup guard.
+    let (output_file, _output_temp) = match output_path {
+        Some(path) => (path, None),
+        None => {
+            let temp = TempFile::new("png");
+            (temp.path().to_string(), Some(temp))
+        }
+    };
 
     // Build plot command args with scale for better visibility
     let args = vec![
         "plot".into(),
-        gcode_file.clone(),
+        gcode_file.path().to_string(),
         "--output".into(),
         output_file.clone(),
         "--scale".into(),
@@ -180,15 +195,11 @@ async fn plot_definition(
         .await
         .map_err(|err| format!("Plotting failed: {err}"))?;
 
-    // Read and encode image
+    // Read and encode image. The temp files are deleted when their guards drop
+    // at the end of this function (success or any earlier `?` return).
     let bytes = fs::read(&output_file).map_err(|err| {
         FiberpathError::File(format!("Failed to read plot output: {err}")).to_string()
     })?;
-
-    // Clean up temp files
-    let _ = fs::remove_file(&wind_file);
-    let _ = fs::remove_file(&gcode_file);
-    let _ = fs::remove_file(&output_file);
 
     Ok(PlotPreview {
         path: output_file,
@@ -205,6 +216,35 @@ fn temp_path(extension: &str) -> String {
         .as_millis();
     path.push(format!("fiberpath-{millis}.{extension}"));
     path.to_string_lossy().into_owned()
+}
+
+/// RAII guard for a throwaway temp file.
+///
+/// Deletes the file when dropped, which covers the success path *and* every
+/// early `?` return. It holds only the path (no open file handle), so the CLI
+/// subprocess can freely create and overwrite the file — avoiding the Windows
+/// sharing violations that an open-handle approach (e.g. `NamedTempFile`) would
+/// cause when the subprocess writes the same path.
+struct TempFile {
+    path: String,
+}
+
+impl TempFile {
+    fn new(extension: &str) -> Self {
+        Self {
+            path: temp_path(extension),
+        }
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 async fn exec_fiberpath(app: AppHandle, args: Vec<String>) -> Result<Output, FiberpathError> {
@@ -346,20 +386,21 @@ async fn validate_wind_definition(
     app: AppHandle,
     definition_json: String,
 ) -> Result<Value, String> {
-    // Create temporary .wind file
-    let wind_file = temp_path("wind");
-    fs::write(&wind_file, &definition_json).map_err(|err| {
+    // Create temporary .wind file (auto-cleaned on drop, including error paths)
+    let wind_file = TempFile::new("wind");
+    fs::write(wind_file.path(), &definition_json).map_err(|err| {
         FiberpathError::File(format!("Failed to write temp .wind file: {err}")).to_string()
     })?;
 
     // Run validate command
-    let args = vec!["validate".into(), wind_file.clone(), "--json".into()];
+    let args = vec![
+        "validate".into(),
+        wind_file.path().to_string(),
+        "--json".into(),
+    ];
     let output = exec_fiberpath(app, args)
         .await
         .map_err(|err| err.to_string())?;
-
-    // Clean up temp file
-    let _ = fs::remove_file(&wind_file);
 
     parse_json_payload(output)
 }
@@ -475,4 +516,34 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running FiberPath GUI");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TempFile;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn temp_file_is_removed_on_drop() {
+        let path = {
+            let temp = TempFile::new("test");
+            fs::write(temp.path(), b"data").expect("write temp file");
+            assert!(Path::new(temp.path()).exists());
+            temp.path().to_string()
+        };
+        assert!(
+            !Path::new(&path).exists(),
+            "temp file should be deleted on drop"
+        );
+    }
+
+    #[test]
+    fn temp_file_drop_is_safe_when_file_missing() {
+        // Dropping a guard whose file was never created (or already removed)
+        // must not panic.
+        let temp = TempFile::new("test");
+        assert!(!Path::new(temp.path()).exists());
+        drop(temp);
+    }
 }
