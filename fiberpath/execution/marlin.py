@@ -212,7 +212,8 @@ class MarlinStreamer:
         self._paused = True
 
         self._ensure_connection()
-        assert self._transport is not None
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
 
         # Then send M0 to pause Marlin's execution of buffered commands
         print("[DEBUG] MarlinStreamer.pause() - sending M0", file=sys.stderr, flush=True)
@@ -245,7 +246,8 @@ class MarlinStreamer:
 
         print("[DEBUG] MarlinStreamer.resume() - sending M108", file=sys.stderr, flush=True)
         self._ensure_connection()
-        assert self._transport is not None
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
 
         # Send M108 to break out of M0 pause
         self._transport.write_line("M108")
@@ -294,7 +296,8 @@ class MarlinStreamer:
 
         print("[DEBUG] MarlinStreamer.emergency_stop() - sending M112", file=sys.stderr, flush=True)
         self._ensure_connection()
-        assert self._transport is not None
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
 
         # Send M112 but don't wait for 'ok' - Marlin halts immediately
         self._transport.write_line("M112")
@@ -367,7 +370,8 @@ class MarlinStreamer:
 
     def _wait_for_marlin_ready(self) -> None:
         """Wait for Marlin to complete its startup sequence and become ready."""
-        assert self._transport is not None
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
 
         if self._log is not None:
             self._log("Waiting for Marlin to initialize...")
@@ -427,7 +431,8 @@ class MarlinStreamer:
             List of response lines received before 'ok'.
         """
         self._ensure_connection()
-        assert self._transport is not None  # for type checkers
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
 
         self._transport.write_line(command)
         responses = self._await_ok()
@@ -438,7 +443,8 @@ class MarlinStreamer:
         """Wait for 'ok' response and return all intermediate lines."""
         import sys
 
-        assert self._transport is not None
+        if self._transport is None:
+            raise StreamError("Serial transport is not connected")
         deadline = time.monotonic() + self._response_timeout
         responses: list[str] = []
 

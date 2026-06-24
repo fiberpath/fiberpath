@@ -188,3 +188,50 @@ def test_startup_timeout_proceeds_with_warning() -> None:
     assert any("No Marlin startup detected" in msg for msg in transport.log_messages)
     # Verify command was still sent (streamer proceeded despite no startup)
     assert transport.written == ["G0 X1"]
+
+
+def _force_unconnected(streamer: MarlinStreamer) -> None:
+    """Make _ensure_connection a no-op so _transport stays None at the guard."""
+    streamer._ensure_connection = lambda: None  # type: ignore[method-assign]
+
+
+@pytest.mark.parametrize("operation", ["send_command", "pause", "resume", "emergency_stop"])
+def test_transport_guard_raises_streamerror(operation: str) -> None:
+    """A None transport at a guard site raises StreamError, not AttributeError.
+
+    Under the previous ``assert self._transport is not None`` guards this same
+    setup raised ``AttributeError`` (or, under ``python -O``, dereferenced None),
+    so this is a true regression guard for issue #103.
+    """
+    streamer = MarlinStreamer(port="dummy")
+    _force_unconnected(streamer)
+    if operation == "resume":
+        streamer._paused = True
+
+    method = getattr(streamer, operation)
+    args = ("G0 X1",) if operation == "send_command" else ()
+    with pytest.raises(StreamError):
+        method(*args)
+
+
+def test_transport_guard_raises_under_optimized_python() -> None:
+    """The guard still raises StreamError when assertions are stripped (python -O)."""
+    import subprocess
+    import sys
+
+    code = (
+        "from fiberpath.execution import MarlinStreamer, StreamError\n"
+        "s = MarlinStreamer(port='dummy')\n"
+        "s._ensure_connection = lambda: None\n"
+        "try:\n"
+        "    s.send_command('G0 X1')\n"
+        "except StreamError:\n"
+        "    print('OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-O", "-c", code],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
