@@ -51,7 +51,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python (no cache for freeze)
         uses: actions/setup-python@v6
@@ -130,7 +130,7 @@ jobs:
         working-directory: fiberpath_gui
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download frozen CLI artifact
         uses: actions/download-artifact@v8
