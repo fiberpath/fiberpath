@@ -36,7 +36,7 @@ hide:
 
     ---
 
-    **Latest Release:** [v0.7.0](https://github.com/CameronBrooks11/fiberpath/releases/latest){ target=_blank }
+    **Latest Release:** [v0.7.2](https://github.com/CameronBrooks11/fiberpath/releases/latest){ target=_blank }
 
     - **Desktop GUI** – Windows, macOS, Linux installers (no Python required)
     - **Python Package** – `pip install fiberpath`
@@ -44,18 +44,18 @@ hide:
 
     [:octicons-arrow-right-24: Installation Guide](getting-started.md)
 
--   :material-new-box:{ .lg .middle } **What's New in v0.7.0**
+-   :material-new-box:{ .lg .middle } **What's New in v0.7.2**
 
     ---
 
-    XAB cutover and production-readiness hardening:
+    Code-quality, hardening, and dependency-refresh pass:
 
-    - Removed legacy XYZ axis-format paths; built-in planning, API, and GUI export now target XAB output
-    - Simplified GUI surfaces further by removing dead style/component residue and tightening editor/layout boundaries
-    - Added bundle-budget CI enforcement and refreshed contributor tooling standards for cleaner release gates
-    - Expanded regression coverage for axis mapping, layer strategy fixtures, and visualization signatures
+    - API plan/simulate errors now return clear 4xx responses instead of 500s, and streaming diagnostics moved to the `logging` module
+    - Hardened Marlin streaming guards (`StreamError` instead of `assert`) and fixed temporary-file cleanup in the desktop backend
+    - Removed dead code (unused geometry module, redundant planner branches) and aligned docs with the cylindrical planning scope
+    - Security & dependency refresh: starlette BadHost CVE, js-yaml/undici/rand advisories, and Tauri 2.11
 
-    Builds on the v0.6.x cleanup track and establishes the v0.7 baseline.
+    Builds on the v0.7 baseline with reliability and maintainability fixes.
 
     [:octicons-arrow-right-24: Marlin Streaming Guide](guides/marlin-streaming.md)
 

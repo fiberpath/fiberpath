@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-24
+
 ### Security
 
 - Hardened API path policy (`enforce_input_path_policy`) to reject absolute paths (POSIX `/`, Windows drive `C:\`, UNC `\\`), NUL bytes, `..` traversal segments, and empty/whitespace inputs with 400 before any filesystem access. Resolved CodeQL alert #9 ("Uncontrolled data used in path expression").
