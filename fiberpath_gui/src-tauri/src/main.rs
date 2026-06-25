@@ -9,6 +9,7 @@ use marlin::MarlinState;
 use serde_json::Value;
 use std::fs;
 use std::process::Output;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -208,13 +209,23 @@ async fn plot_definition(
     })
 }
 
+/// Monotonic counter ensuring temp file names are unique within the process
+/// even when several are created in the same millisecond.
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn temp_path(extension: &str) -> String {
     let mut path = std::env::temp_dir();
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    path.push(format!("fiberpath-{millis}.{extension}"));
+    // A millisecond-only name collides when rapid commands (e.g. validate /
+    // preview firing on edits) create temp files in the same millisecond — one
+    // call's TempFile::Drop then deletes another's file. The PID plus a
+    // monotonic counter make every name unique within and across processes.
+    let pid = std::process::id();
+    let seq = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    path.push(format!("fiberpath-{pid}-{millis}-{seq}.{extension}"));
     path.to_string_lossy().into_owned()
 }
 
@@ -520,9 +531,19 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::TempFile;
+    use super::{temp_path, TempFile};
+    use std::collections::HashSet;
     use std::fs;
     use std::path::Path;
+
+    // Regression: a millisecond-only temp name collided when many temp files
+    // were created in the same millisecond, so one call's TempFile::Drop could
+    // delete another's file. Rapidly generated paths must all be unique.
+    #[test]
+    fn temp_path_is_unique_under_rapid_calls() {
+        let paths: HashSet<String> = (0..1000).map(|_| temp_path("gcode")).collect();
+        assert_eq!(paths.len(), 1000, "temp_path produced duplicate names");
+    }
 
     #[test]
     fn temp_file_is_removed_on_drop() {

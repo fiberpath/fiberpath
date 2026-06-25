@@ -11,6 +11,7 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 ### Fixed
 
 - Marlin desktop commands no longer hang forever if the underlying CLI subprocess dies or emits a non-JSON line: when the response reader stops, in-flight requests are failed (the command returns an error) instead of leaving the UI spinner stuck permanently.
+- Desktop preview/validate temp files now use process- and counter-unique names, fixing rare collisions when commands fired in the same millisecond could delete or clobber each other's temp file (intermittent "file not found" / corrupted preview).
 - The Marlin desktop integration now recovers if its helper subprocess dies: a dead process is detected and respawned on the next command instead of reusing it forever, and the subprocess is killed on app shutdown so it no longer lingers as an orphan holding the serial port open.
 - Helical layer editor and save-gate validation now match the planner's bounds, so the editor no longer accepts values the backend rejects with a 422: `lockDegrees`, `leadInMM`, and `leadOutDegrees` must be positive (were allowed to be `0`), `skipIndex` must be a positive integer (the save gate allowed `0`), and the wind angle is constrained to `[1°, 89°]` (was `(0°, 90°)`; the engine clamps to `[1, 89]` because `90°` gives `cos = 0`).
 - Helical layer geometry hint no longer renders "not divisible by pattern number (NaN)" while the Pattern Number field is mid-edit (emptied to `NaN`); no hint is shown until the field holds a valid positive integer.
