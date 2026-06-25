@@ -21,7 +21,7 @@ Applies to:
 
 ## Ownership
 
-- Primary triage owner: maintainers responsible for the active release planning document in `docs/feature-backlog.md`
+- Primary triage owner: maintainers responsible for the active release planning document in `docs/development/feature-backlog.md`
 - PR review owner: area maintainer for the affected ecosystem
 - Security escalation owner: release manager on current target milestone
 
@@ -62,6 +62,6 @@ When an update is deferred:
 
 ## Documentation and Traceability
 
-- Roadmap and release source of truth: `CHANGELOG.md` and `docs/feature-backlog.md`.
+- Roadmap and release source of truth: `CHANGELOG.md`, `docs/development/roadmap.md`, and `docs/development/feature-backlog.md`.
 - Release-level summary: `CHANGELOG.md`.
 - CI architecture reference: `docs/development/ci-cd.md`.
