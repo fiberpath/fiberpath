@@ -16,12 +16,7 @@ class GCodeProgram:
 
 
 def sanitize_program(commands: Iterable[str]) -> list[str]:
-    sanitized: list[str] = []
-    for line in commands:
-        stripped = line.strip()
-        if stripped:
-            sanitized.append(stripped)
-    return sanitized
+    return [stripped for line in commands if (stripped := line.strip())]
 
 
 def write_gcode(program: GCodeProgram | Sequence[str], destination: str | Path) -> Path:

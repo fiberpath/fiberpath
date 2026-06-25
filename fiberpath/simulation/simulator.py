@@ -121,7 +121,6 @@ def simulate_program(
 
         mandrel_delta_mm = mandrel_delta_deg / 360.0 * mandrel_circumference
         distance_sq = carriage_delta**2 + mandrel_delta_mm**2
-        tow_length_sq = carriage_delta**2 + mandrel_delta_mm**2
 
         if math.isclose(distance_sq, 0.0) and math.isclose(delivery_delta, 0.0):
             last_carriage, last_mandrel, last_delivery = (
@@ -137,7 +136,8 @@ def simulate_program(
 
         total_time += distance / feed_rate * 60.0
         total_distance += distance
-        tow_length += math.sqrt(tow_length_sq)
+        # tow length per move equals the Euclidean carriage+mandrel distance
+        tow_length += distance
         moves += 1
 
         last_carriage, last_mandrel, last_delivery = (

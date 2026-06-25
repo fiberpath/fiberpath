@@ -187,8 +187,8 @@ def _split_segment(
     if start_band == end_band or math.isclose(start[1], end[1]):
         return [
             [
-                (_wrap_x(start[0]), _wrap(start[1], height_degrees)),
-                (_wrap_x(end[0]), _wrap(end[1], height_degrees)),
+                (start[0], _wrap(start[1], height_degrees)),
+                (end[0], _wrap(end[1], height_degrees)),
             ]
         ]
 
@@ -205,8 +205,8 @@ def _split_segment(
     exit_y = height_degrees if direction > 0 else 0.0
     first_segment = [
         [
-            (_wrap_x(start[0]), _wrap(start[1], height_degrees)),
-            (_wrap_x(boundary_x), exit_y),
+            (start[0], _wrap(start[1], height_degrees)),
+            (boundary_x, exit_y),
         ]
     ]
     epsilon = 0.001 * direction
@@ -220,10 +220,6 @@ def _wrap(value: float, height_degrees: float) -> float:
     if math.isclose(wrapped, height_degrees):
         return 0.0
     return wrapped
-
-
-def _wrap_x(x_value: float) -> float:
-    return x_value
 
 
 def _screen_point(

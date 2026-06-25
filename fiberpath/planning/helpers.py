@@ -17,12 +17,6 @@ class Axis(Enum):
     DELIVERY_HEAD = "delivery_head"
 
 
-AXIS_LOOKUP: dict[Axis, str] = {
-    Axis.CARRIAGE: "X",
-    Axis.MANDREL: "Y",
-    Axis.DELIVERY_HEAD: "Z",
-}
-
 Coordinate = dict[Axis, float]
 
 
