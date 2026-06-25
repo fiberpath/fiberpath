@@ -135,16 +135,19 @@ jobs:
 
             let notes = '';
 
-            // Desktop installers section
+            // Desktop installers section. Asset names match Tauri's bundle
+            // output: the productName "FiberPath GUI" yields a space that
+            // GitHub renders as `.` in the release asset filename, and the
+            // macOS dmg is built for Apple Silicon (aarch64) on macos-latest.
             notes += `## Desktop Installers\n\n`;
             notes += `**Windows:**\n`;
-            notes += `- \`FiberPath_${version}_x64_en-US.msi\` (recommended)\n`;
-            notes += `- \`FiberPath_${version}_x64-setup.exe\`\n\n`;
-            notes += `**macOS:**\n`;
-            notes += `- \`FiberPath_${version}_universal.dmg\`\n\n`;
+            notes += `- \`FiberPath.GUI_${version}_x64_en-US.msi\` (recommended)\n`;
+            notes += `- \`FiberPath.GUI_${version}_x64-setup.exe\`\n\n`;
+            notes += `**macOS (Apple Silicon):**\n`;
+            notes += `- \`FiberPath.GUI_${version}_aarch64.dmg\`\n\n`;
             notes += `**Linux:**\n`;
-            notes += `- \`fiberpath_${version}_amd64.deb\`\n`;
-            notes += `- \`fiberpath_${version}_amd64.AppImage\`\n\n`;
+            notes += `- \`FiberPath.GUI_${version}_amd64.deb\`\n`;
+            notes += `- \`FiberPath.GUI_${version}_amd64.AppImage\`\n\n`;
             notes += `📚 [Installation Guide](https://fiberpath.org/fiberpath/getting-started/) | `;
             notes += `🆘 [Troubleshooting](https://fiberpath.org/fiberpath/troubleshooting/)\n\n`;
 
@@ -165,11 +168,11 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           echo "Expected release assets for v$VERSION:"
-          echo "  - FiberPath_${VERSION}_x64_en-US.msi"
-          echo "  - FiberPath_${VERSION}_x64-setup.exe"
-          echo "  - FiberPath_${VERSION}_universal.dmg"
-          echo "  - fiberpath_${VERSION}_amd64.deb"
-          echo "  - fiberpath_${VERSION}_amd64.AppImage"
+          echo "  - FiberPath.GUI_${VERSION}_x64_en-US.msi"
+          echo "  - FiberPath.GUI_${VERSION}_x64-setup.exe"
+          echo "  - FiberPath.GUI_${VERSION}_aarch64.dmg"
+          echo "  - FiberPath.GUI_${VERSION}_amd64.deb"
+          echo "  - FiberPath.GUI_${VERSION}_amd64.AppImage"
           echo "Assets will be uploaded by build-gui-installers workflow"
 
       - name: Create GitHub Release
