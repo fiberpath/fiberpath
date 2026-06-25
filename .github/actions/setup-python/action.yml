@@ -30,7 +30,7 @@ runs:
         cache-dependency-glob: "pyproject.toml"
 
     - name: Cache Python virtual environment
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: .venv
         key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml') }}-${{ inputs.cache-key-suffix }}
