@@ -311,6 +311,23 @@ impl MarlinSubprocess {
 
 pub type MarlinState = Arc<Mutex<Option<MarlinSubprocess>>>;
 
+/// Acquire `(stdin, response_router)` clones from the shared Marlin state.
+///
+/// Passing `Some(app)` spawns the interactive subprocess if it is not yet
+/// running; passing `None` fails with "Not connected" when nothing is running.
+fn acquire_io(
+    state: &MarlinState,
+    app: Option<AppHandle>,
+) -> Result<(Arc<Mutex<ChildStdin>>, ResponseRouter), String> {
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    if guard.is_none() {
+        let app = app.ok_or("Not connected")?;
+        *guard = Some(MarlinSubprocess::spawn(app).map_err(|e| e.to_string())?);
+    }
+    let subprocess = guard.as_ref().unwrap();
+    Ok((subprocess.stdin.clone(), subprocess.response_router.clone()))
+}
+
 // Tauri commands
 
 #[tauri::command]
@@ -318,14 +335,7 @@ pub async fn marlin_list_ports(
     app: AppHandle,
     state: tauri::State<'_, MarlinState>,
 ) -> Result<Vec<SerialPort>, String> {
-    let (stdin, response_router) = {
-        let mut marlin_state = state.lock().map_err(|e| e.to_string())?;
-        if marlin_state.is_none() {
-            *marlin_state = Some(MarlinSubprocess::spawn(app).map_err(|e| e.to_string())?);
-        }
-        let subprocess = marlin_state.as_ref().unwrap();
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), Some(app))?;
 
     let command = serde_json::json!({
         "action": "list_ports"
@@ -364,14 +374,7 @@ pub async fn marlin_connect(
     app: AppHandle,
     state: tauri::State<'_, MarlinState>,
 ) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let mut marlin_state = state.lock().map_err(|e| e.to_string())?;
-        if marlin_state.is_none() {
-            *marlin_state = Some(MarlinSubprocess::spawn(app).map_err(|e| e.to_string())?);
-        }
-        let subprocess = marlin_state.as_ref().unwrap();
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), Some(app))?;
 
     let command = serde_json::json!({
         "action": "connect",
@@ -393,11 +396,7 @@ pub async fn marlin_connect(
 
 #[tauri::command]
 pub async fn marlin_disconnect(state: tauri::State<'_, MarlinState>) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "disconnect"
@@ -420,11 +419,7 @@ pub async fn marlin_send_command(
     gcode: String,
     state: tauri::State<'_, MarlinState>,
 ) -> Result<Vec<String>, String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "send",
@@ -455,11 +450,7 @@ pub async fn marlin_stream_file(
     state: tauri::State<'_, MarlinState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "stream",
@@ -494,11 +485,7 @@ pub async fn marlin_stream_file(
 
 #[tauri::command]
 pub async fn marlin_pause(state: tauri::State<'_, MarlinState>) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "pause"
@@ -518,11 +505,7 @@ pub async fn marlin_pause(state: tauri::State<'_, MarlinState>) -> Result<(), St
 
 #[tauri::command]
 pub async fn marlin_resume(state: tauri::State<'_, MarlinState>) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "resume"
@@ -542,11 +525,7 @@ pub async fn marlin_resume(state: tauri::State<'_, MarlinState>) -> Result<(), S
 
 #[tauri::command]
 pub async fn marlin_stop(state: tauri::State<'_, MarlinState>) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "stop"
@@ -566,11 +545,7 @@ pub async fn marlin_stop(state: tauri::State<'_, MarlinState>) -> Result<(), Str
 
 #[tauri::command]
 pub async fn marlin_cancel(state: tauri::State<'_, MarlinState>) -> Result<(), String> {
-    let (stdin, response_router) = {
-        let marlin_state = state.lock().map_err(|e| e.to_string())?;
-        let subprocess = marlin_state.as_ref().ok_or("Not connected")?;
-        (subprocess.stdin.clone(), subprocess.response_router.clone())
-    };
+    let (stdin, response_router) = acquire_io(state.inner(), None)?;
 
     let command = serde_json::json!({
         "action": "cancel"
