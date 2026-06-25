@@ -77,6 +77,16 @@ def validate_helical_layer(
             "skipIndex and patternNumber must be coprime for full coverage",
         )
 
+    if layer.lead_in_mm >= mandrel.wind_length:
+        raise LayerValidationError(
+            layer_index,
+            (
+                f"leadInMM ({layer.lead_in_mm}mm) must be less than the mandrel "
+                f"windLength ({mandrel.wind_length}mm); a longer lead-in drives the "
+                "carriage off the mandrel into negative coordinates"
+            ),
+        )
+
     kinematics = compute_helical_kinematics(layer, mandrel, tow)
     if kinematics.num_circuits % layer.pattern_number != 0:
         raise LayerValidationError(

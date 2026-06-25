@@ -49,6 +49,17 @@ def test_validate_helical_layer_rejects_non_divisible_circuit_pattern() -> None:
         validate_helical_layer(2, layer, MANDREL, tow)
 
 
+def test_validate_helical_layer_rejects_lead_in_exceeding_wind_length() -> None:
+    # leadInMM >= the mandrel windLength drives the carriage off the end of the
+    # mandrel into negative coordinates and inverts the main-pass rotation
+    # (the machine could ram an end-stop). MANDREL.windLength is 100mm.
+    layer = HelicalLayer.model_validate({**BASE_LAYER, "leadInMM": 150.0})
+    tow = TowParameters.model_validate({"width": 6.0, "thickness": 0.5})
+
+    with pytest.raises(LayerValidationError, match="leadInMM"):
+        validate_helical_layer(1, layer, MANDREL, tow)
+
+
 def test_validate_helical_layer_allows_valid_parameters() -> None:
     layer = HelicalLayer.model_validate(BASE_LAYER)
     tow = TowParameters.model_validate({"width": 6.0, "thickness": 0.5})
