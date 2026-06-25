@@ -1,9 +1,10 @@
-import type {
-  Layer,
-  HoopLayer as GUIHoopLayer,
-  HelicalLayer as GUIHelicalLayer,
-  SkipLayer as GUISkipLayer,
-  FiberPathProject,
+import {
+  HELICAL_DEFAULTS,
+  type Layer,
+  type HoopLayer as GUIHoopLayer,
+  type HelicalLayer as GUIHelicalLayer,
+  type SkipLayer as GUISkipLayer,
+  type FiberPathProject,
 } from "./project";
 import type {
   WindDefinition,
@@ -28,13 +29,14 @@ export function convertLayerToWindSchema(
     const helicalData = layer.helical as GUIHelicalLayer | undefined;
     return {
       windType: "helical",
-      windAngle: helicalData?.wind_angle ?? 45,
-      patternNumber: helicalData?.pattern_number ?? 3,
-      skipIndex: helicalData?.skip_index ?? 2,
-      lockDegrees: helicalData?.lock_degrees ?? 5,
-      leadInMM: helicalData?.lead_in_mm ?? 10,
-      leadOutDegrees: helicalData?.lead_out_degrees ?? 5,
-      skipInitialNearLock: helicalData?.skip_initial_near_lock ?? false,
+      windAngle: helicalData?.wind_angle ?? HELICAL_DEFAULTS.wind_angle,
+      patternNumber: helicalData?.pattern_number ?? HELICAL_DEFAULTS.pattern_number,
+      skipIndex: helicalData?.skip_index ?? HELICAL_DEFAULTS.skip_index,
+      lockDegrees: helicalData?.lock_degrees ?? HELICAL_DEFAULTS.lock_degrees,
+      leadInMM: helicalData?.lead_in_mm ?? HELICAL_DEFAULTS.lead_in_mm,
+      leadOutDegrees: helicalData?.lead_out_degrees ?? HELICAL_DEFAULTS.lead_out_degrees,
+      skipInitialNearLock:
+        helicalData?.skip_initial_near_lock ?? HELICAL_DEFAULTS.skip_initial_near_lock,
     };
   } else if (layer.type === "skip") {
     const skipData = layer.skip as GUISkipLayer | undefined;
@@ -101,10 +103,11 @@ export function convertWindSchemaToLayer(
         wind_angle: schemaLayer.windAngle,
         pattern_number: schemaLayer.patternNumber,
         skip_index: schemaLayer.skipIndex,
-        lock_degrees: schemaLayer.lockDegrees ?? 5,
-        lead_in_mm: schemaLayer.leadInMM ?? 10,
-        lead_out_degrees: schemaLayer.leadOutDegrees ?? 5,
-        skip_initial_near_lock: schemaLayer.skipInitialNearLock ?? false,
+        lock_degrees: schemaLayer.lockDegrees ?? HELICAL_DEFAULTS.lock_degrees,
+        lead_in_mm: schemaLayer.leadInMM ?? HELICAL_DEFAULTS.lead_in_mm,
+        lead_out_degrees: schemaLayer.leadOutDegrees ?? HELICAL_DEFAULTS.lead_out_degrees,
+        skip_initial_near_lock:
+          schemaLayer.skipInitialNearLock ?? HELICAL_DEFAULTS.skip_initial_near_lock,
       },
     };
   } else if (schemaLayer.windType === "skip") {

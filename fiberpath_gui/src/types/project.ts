@@ -117,6 +117,20 @@ export function createEmptyProject(): FiberPathProject {
   };
 }
 
+/**
+ * Canonical default values for a helical layer. Single source of truth shared by
+ * createLayer and the GUI<->wind-schema converters so the two never drift.
+ */
+export const HELICAL_DEFAULTS = {
+  wind_angle: 45,
+  pattern_number: 3,
+  skip_index: 2,
+  lock_degrees: 540,
+  lead_in_mm: 25,
+  lead_out_degrees: 60,
+  skip_initial_near_lock: false,
+} as const;
+
 // Helper to create layer with defaults
 export function createLayer(type: LayerType): Layer {
   const id = crypto.randomUUID();
@@ -132,15 +146,7 @@ export function createLayer(type: LayerType): Layer {
       return {
         id,
         type: "helical",
-        helical: {
-          wind_angle: 45,
-          pattern_number: 3,
-          skip_index: 2,
-          lock_degrees: 540,
-          lead_in_mm: 25,
-          lead_out_degrees: 60,
-          skip_initial_near_lock: false,
-        },
+        helical: { ...HELICAL_DEFAULTS },
       };
     case "skip":
       return {

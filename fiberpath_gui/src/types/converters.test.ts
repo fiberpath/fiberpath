@@ -5,7 +5,7 @@ import {
   projectToWindDefinition,
   windDefinitionToProject,
 } from "./converters";
-import type { Layer, FiberPathProject } from "./project";
+import { createLayer, type Layer, type FiberPathProject } from "./project";
 import type { WindDefinition } from "./wind-schema";
 
 describe("converters", () => {
@@ -98,9 +98,9 @@ describe("converters", () => {
         windAngle: 45,
         patternNumber: 3,
         skipIndex: 2,
-        lockDegrees: 5,
-        leadInMM: 10,
-        leadOutDegrees: 5,
+        lockDegrees: 540,
+        leadInMM: 25,
+        leadOutDegrees: 60,
         skipInitialNearLock: false,
       });
     });
@@ -173,6 +173,19 @@ describe("converters", () => {
       const result = convertWindSchemaToLayer(windLayer);
 
       expect(result.helical?.skip_initial_near_lock).toBe(false);
+    });
+  });
+
+  describe("helical default round-trip", () => {
+    it("preserves a freshly created helical layer through GUI->schema->GUI", () => {
+      const original = createLayer("helical");
+      const roundTripped = convertWindSchemaToLayer(
+        convertLayerToWindSchema(original),
+      );
+      // ids are regenerated; the helical payload must survive unchanged
+      // (regression guard: defaults must not collapse to lock_degrees=5).
+      expect(roundTripped.helical).toEqual(original.helical);
+      expect(roundTripped.helical?.lock_degrees).toBe(540);
     });
   });
 
