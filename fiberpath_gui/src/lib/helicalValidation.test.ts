@@ -75,6 +75,44 @@ describe("helicalValidation", () => {
       });
     });
 
+    // Regression: emptying a numeric input yields NaN. Re-validating the
+    // sibling field then ran the coprime check (gcd) against the NaN value,
+    // which recursed forever and crashed the app with
+    // "RangeError: Maximum call stack size exceeded".
+    describe("does not crash when a pattern/skip field is mid-edit", () => {
+      it("returns a range error (not a stack overflow) for a NaN skip index", () => {
+        expect(() =>
+          validateHelicalField("skip_index", NaN, defaultHelical),
+        ).not.toThrow();
+        expect(validateHelicalField("skip_index", NaN, defaultHelical)).toBeDefined();
+      });
+
+      it("does not crash validating pattern_number when skip_index is NaN", () => {
+        const layer: HelicalLayer = { ...defaultHelical, skip_index: NaN };
+        expect(() =>
+          validateHelicalField("pattern_number", 3, layer),
+        ).not.toThrow();
+        // pattern itself is valid; the coprime check is skipped while the
+        // sibling is invalid, so no spurious error is reported here.
+        expect(validateHelicalField("pattern_number", 3, layer)).toBeUndefined();
+      });
+
+      it("does not crash validating skip_index when pattern_number is NaN", () => {
+        const layer: HelicalLayer = { ...defaultHelical, pattern_number: NaN };
+        expect(() =>
+          validateHelicalField("skip_index", 2, layer),
+        ).not.toThrow();
+        expect(validateHelicalField("skip_index", 2, layer)).toBeUndefined();
+      });
+
+      it("does not crash on non-integer pattern/skip values", () => {
+        const layer: HelicalLayer = { ...defaultHelical, skip_index: 2.5 };
+        expect(() =>
+          validateHelicalField("pattern_number", 3, layer),
+        ).not.toThrow();
+      });
+    });
+
     describe("lock_degrees", () => {
       it("accepts zero", () => {
         expect(

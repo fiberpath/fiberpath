@@ -16,6 +16,15 @@ const gcd = (a: number, b: number): number => {
 };
 
 const validateCoprime = (pattern: number, skip: number): string | undefined => {
+  // Coprimality is only defined for two positive integers. While a sibling
+  // field is mid-edit it can be NaN (an emptied input) or a non-integer; in
+  // that case skip the cross-field check — the offending field reports its own
+  // range error. This guard also prevents gcd() from infinite-recursing on
+  // NaN (Math.abs(NaN) is NaN, NaN === 0 is false, and NaN % NaN is NaN, so it
+  // never terminates), which previously crashed the app with a stack overflow.
+  if (!Number.isInteger(pattern) || !Number.isInteger(skip)) {
+    return undefined;
+  }
   if (gcd(pattern, skip) !== 1) {
     return "Pattern and skip must be coprime (GCD = 1)";
   }
