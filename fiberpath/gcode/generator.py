@@ -22,5 +22,6 @@ def sanitize_program(commands: Iterable[str]) -> list[str]:
 def write_gcode(program: GCodeProgram | Sequence[str], destination: str | Path) -> Path:
     target = Path(destination)
     lines = program.commands if isinstance(program, GCodeProgram) else list(program)
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return target
