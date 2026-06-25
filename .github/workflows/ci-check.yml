@@ -13,7 +13,6 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - "setup.cfg"
-      - "mkdocs.yml"
       - "README.md"
       - "CHANGELOG.md"
       - "scripts/**"
@@ -31,7 +30,6 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - "setup.cfg"
-      - "mkdocs.yml"
       - "README.md"
       - "CHANGELOG.md"
       - "scripts/**"
@@ -78,11 +76,8 @@ jobs:
             docs:
               - "docs/**"
               - "fiberpath_gui/docs/**"
-              - "mkdocs.yml"
-              - "scripts/sync_gui_docs.py"
               - "README.md"
-              - ".github/workflows/docs-ci.yml"
-              - ".github/actions/setup-python/**"
+              - ".github/workflows/ci-check.yml"
 
   backend:
     name: Backend
@@ -100,7 +95,10 @@ jobs:
     name: Docs
     needs: changes
     if: needs.changes.outputs.docs == 'true'
-    uses: ./.github/workflows/docs-ci.yml
+    uses: fiberpath/.github/.github/workflows/docs-validate.yml@main
+    with:
+      section: fiberpath
+      gui_docs_path: fiberpath_gui/docs
 
   ci-check:
     name: CI Check

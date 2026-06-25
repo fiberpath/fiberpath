@@ -154,12 +154,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
-# Generated GUI documentation (synced from fiberpath_gui/docs/)
-docs/gui/
-
 # mypy
 .mypy_cache/
 .dmypy.json

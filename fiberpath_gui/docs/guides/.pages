@@ -1,0 +1,4 @@
+nav:
+  - Schema Validation: schemas.md
+  - Styling: styling.md
+  - Performance: performance.md

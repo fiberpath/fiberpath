@@ -9,7 +9,7 @@
 - [ ] Run all test suites locally:
   - **Python:** `uv run pytest -v`
   - **GUI:** `cd fiberpath_gui && npm test`
-- [ ] All CI workflows passing on target branch (backend-ci, gui-ci, docs-ci, gui-packaging)
+- [ ] All CI workflows passing on target branch (backend-ci, gui-ci, gui-packaging)
 - [ ] All planned features from roadmap completed and tested
 - [ ] Manual end-to-end testing on Windows/macOS/Linux (GUI streaming, planning workflows, CLI commands)
 

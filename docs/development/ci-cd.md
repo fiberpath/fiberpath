@@ -21,7 +21,7 @@ Reusable setup steps used across multiple workflows:
    - Creates virtual environment
    - Installs dependencies with caching
    - Configurable dependency groups
-   - Used by: backend-ci, backend-publish, docs-ci
+   - Used by: backend-ci, backend-publish
 
 2. **setup-node/**
    - Sets up Node.js 24
@@ -55,12 +55,12 @@ Reusable setup steps used across multiple workflows:
   2. Test & Build (Vitest, coverage, Vite build)
 - Status: [![GUI CI](https://github.com/USER/fiberpath/actions/workflows/gui-ci.yml/badge.svg)](https://github.com/USER/fiberpath/actions/workflows/gui-ci.yml)
 
-**docs-ci.yml** - Documentation CI
+**Docs validation** - delegated, not local
 
-- Triggers: Push to main, PRs affecting docs
-- Jobs:
-  1. Validate MkDocs build (--strict)
-- Status: [![Docs CI](https://github.com/USER/fiberpath/actions/workflows/docs-ci.yml/badge.svg)](https://github.com/USER/fiberpath/actions/workflows/docs-ci.yml)
+- This repo holds no MkDocs config. On PRs affecting `docs/**` or
+  `fiberpath_gui/docs/**`, the `CI Check`'s `docs` job calls the org-shared
+  reusable workflow `fiberpath/.github/.github/workflows/docs-validate.yml`,
+  which builds these docs against the site's real config (`--strict`).
 
 **dependency-audit.yml** - Dependency Security Audit
 
@@ -76,9 +76,10 @@ Reusable setup steps used across multiple workflows:
 
 Documentation is **published from the project hub repo**,
 [`fiberpath/fiberpath.github.io`](https://github.com/fiberpath/fiberpath.github.io), not from this
-repo. That repo checks out `fiberpath/fiberpath`, builds these docs with MkDocs `--strict`, and serves
-them at <https://fiberpath.github.io/fiberpath>. This repo only **validates** the docs build via
-`docs-ci.yml`.
+repo. The hub owns all MkDocs config; it imports this repo's `docs/` (and the GUI docs) at build time,
+builds the unified site with MkDocs `--strict`, and serves it at <https://fiberpath.github.io/fiberpath>.
+This repo contributes only Markdown; validation on PRs is delegated to the org's shared
+`docs-validate` reusable workflow (above).
 
 #### Packaging Workflows
 
@@ -135,7 +136,6 @@ Format: `{component}-{purpose}.yml`
 | --------------- | ----------- | ------------ | ------ | ------- |
 | backend-ci      | ✅          | ✅           | ❌     | ❌      |
 | gui-ci          | ✅          | ✅           | ❌     | ❌      |
-| docs-ci         | ✅          | ✅           | ❌     | ❌      |
 | dependency-audit| ✅          | ✅           | ✅     | ❌      |
 | gui-packaging   | ✅          | ❌           | ✅     | ✅      |
 | backend-publish | ❌          | ❌           | ✅     | ✅      |
@@ -147,7 +147,7 @@ Workflows only run when relevant files change:
 
 - **backend-ci**: `fiberpath/**`, `fiberpath_api/**`, `fiberpath_cli/**`, `tests/**`, `pyproject.toml`
 - **gui-ci**: `fiberpath_gui/**`, workflow files, composite actions
-- **docs-ci**: `docs/**`, `mkdocs.yml`, `CONTRIBUTING.md`, `README.md`
+- **docs (CI Check filter)**: `docs/**`, `fiberpath_gui/docs/**`, `README.md`
 - **gui-packaging**: `fiberpath_gui/**`, workflow files, composite actions
 - **dependency-audit**: `.github/workflows/dependency-audit.yml`, dependency manifests and lockfiles
 
@@ -183,7 +183,7 @@ Previous workflows moved to `.github/workflows/archive/`:
 - **ci.yml** - Old monolithic Python CI (combined lint + test)
 - **gui.yml** - Old GUI checks + packaging (redundant with gui-tests.yml)
 - **gui-tests.yml** - Old GUI testing (redundant with gui.yml)
-- **docs-site.yml** - Old docs deployment (replaced by docs-ci; publishing now lives in the fiberpath.github.io hub repo)
+- **docs-site.yml** - Old docs deployment (the site now lives in the fiberpath.github.io hub repo)
 
 ## Improvements Over Previous System
 

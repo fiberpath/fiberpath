@@ -1,0 +1,13 @@
+# Nav for the FiberPath section. This file travels with the docs content; the
+# site (fiberpath/fiberpath.github.io) builds the nav from it. This repo holds
+# no MkDocs config of its own.
+nav:
+  - index.md
+  - Getting Started: getting-started.md
+  - Troubleshooting: troubleshooting.md
+  - VM Testing: vm-testing.md
+  - User Guides: guides
+  - Reference: reference
+  - Architecture: architecture
+  - Development: development
+  - GUI: gui

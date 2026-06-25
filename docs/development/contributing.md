@@ -20,7 +20,11 @@ Thanks for investing time in the project! This guide explains how to set up a de
 
 4. **Optional extras:**
    - GUI: `cd fiberpath_gui && npm install`
-   - Docs tooling: `uv pip install .[docs]`
+
+Documentation is plain Markdown — no local tooling is needed to edit it. The
+site (theme, build, publishing) is owned by
+[`fiberpath/fiberpath.github.io`](https://github.com/fiberpath/fiberpath.github.io);
+to preview the full rendered site, build it from that repo.
 
 ## Coding Standards
 
@@ -47,7 +51,6 @@ FiberPath uses GitHub Actions with specialized workflows:
 
 - **backend-ci.yml** - Python linting (Ruff), type checking (MyPy), testing (pytest on 3 OS)
 - **gui-ci.yml** - GUI type/lint checks (tsc, stylelint, CSS var guard), testing (Vitest), building (Vite), Rust checks (fmt + clippy)
-- **docs-ci.yml** - Documentation validation (MkDocs --strict)
 - **dependency-audit.yml** - Scheduled and PR-gated dependency security audit (pip-audit, npm audit, cargo audit)
 - **gui-packaging.yml** - Tauri installer creation for Windows/macOS/Linux
 - **backend-publish.yml** - PyPI publishing with trusted publishing (releases only)
@@ -57,10 +60,10 @@ All workflows use reusable composite actions (`.github/actions/`) for setup step
 
 **Branch Triggers:**
 
-- CI workflows (backend-ci, gui-ci, docs-ci) run on `main`, `vX.Y.Z-dev`, and all PRs
+- CI workflows (backend-ci, gui-ci) run on `main`, `vX.Y.Z-dev`, and all PRs
 - Packaging and publishing run on releases or manual dispatch
 
-Documentation is **authored and validated here** (`docs-ci.yml`, MkDocs `--strict`) but **published by the project hub**, [`fiberpath/fiberpath.github.io`](https://github.com/fiberpath/fiberpath.github.io), which builds these docs and serves them at <https://fiberpath.github.io/fiberpath>.
+Documentation is **authored here** (this repo holds only the `docs/` Markdown — no MkDocs config). On every PR touching docs, the `CI Check`'s docs job calls a shared reusable workflow in the org's `.github` repo that builds these docs against the site's real config (`--strict`). The site is **owned and published by** [`fiberpath/fiberpath.github.io`](https://github.com/fiberpath/fiberpath.github.io), which serves them at <https://fiberpath.github.io/fiberpath>.
 
 ## Issue Triage & Discussion
 

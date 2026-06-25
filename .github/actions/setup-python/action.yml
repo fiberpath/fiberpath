@@ -9,7 +9,7 @@ inputs:
   dependencies:
     description: Dependency groups to install (e.g., ".[dev,api]")
     required: false
-    default: ".[dev,api,docs]"
+    default: ".[dev,api]"
   cache-key-suffix:
     description: Additional suffix for cache key
     required: false

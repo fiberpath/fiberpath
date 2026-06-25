@@ -18,7 +18,7 @@ jobs:
       - name: Setup Python environment
         uses: ./.github/actions/setup-python
         with:
-          dependencies: ".[dev,api,docs]"
+          dependencies: ".[dev,api]"
 
       - name: Run Ruff linter
         run: uv run ruff check

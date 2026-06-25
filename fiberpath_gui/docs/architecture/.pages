@@ -1,0 +1,5 @@
+nav:
+  - Tech Stack: tech-stack.md
+  - State Management: state-management.md
+  - CLI Integration: cli-integration.md
+  - Streaming State: streaming-state.md
