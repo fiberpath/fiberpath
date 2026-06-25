@@ -156,9 +156,17 @@ impl ResponseRouter {
         }
     }
 
+    /// Drop every pending response sender. Called when the reader thread exits
+    /// (the subprocess closed stdout or a read error occurred) so in-flight
+    /// `send_and_wait()` calls resolve to `ChannelClosed` instead of hanging
+    /// forever waiting for a reply that will never arrive.
+    fn fail_all_pending(&self) {
+        self.pending_responses.lock().unwrap().clear();
+    }
+
     /// Start the response reader thread
     fn spawn_reader(&self, stdout: ChildStdout, app: AppHandle) -> std::thread::JoinHandle<()> {
-        let pending_responses = self.pending_responses.clone();
+        let router = self.clone();
 
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
@@ -181,7 +189,7 @@ impl ResponseRouter {
 
                 // Route by request ID if present
                 if let Some(req_id) = response.request_id() {
-                    let sender = pending_responses.lock().unwrap().remove(&req_id);
+                    let sender = router.pending_responses.lock().unwrap().remove(&req_id);
                     if let Some(sender) = sender {
                         let _ = sender.send(response);
                     } else {
@@ -205,6 +213,11 @@ impl ResponseRouter {
                     }
                 }
             }
+
+            // The stdout stream ended (subprocess exited) or a read error
+            // occurred. Fail any in-flight requests so their callers stop
+            // waiting forever for a response that will never come.
+            router.fail_all_pending();
         })
     }
 
@@ -560,5 +573,35 @@ pub async fn marlin_cancel(state: tauri::State<'_, MarlinState>) -> Result<(), S
         MarlinResponse::Cancelled { .. } => Ok(()),
         MarlinResponse::Error { message, .. } => Err(message),
         other => Err(format!("Unexpected response from cancel: {:?}", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: when the reader thread exits (subprocess died or stdout
+    // closed), in-flight requests must be failed rather than left waiting
+    // forever. fail_all_pending() drops the senders so the awaiting receivers
+    // resolve to a closed channel (-> MarlinError::ChannelClosed).
+    #[test]
+    fn fail_all_pending_closes_in_flight_receivers() {
+        let router = ResponseRouter::new();
+        let (tx, mut rx) = oneshot::channel::<MarlinResponse>();
+        router.pending_responses.lock().unwrap().insert(1, tx);
+
+        // Before: the request is still pending (open, no message yet).
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        router.fail_all_pending();
+
+        // After: the sender was dropped, so the receiver is closed.
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Closed)
+        ));
     }
 }

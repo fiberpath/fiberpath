@@ -89,3 +89,6 @@ jobs:
 
       - name: Run Clippy (Rust linter)
         run: npm run clippy
+
+      - name: Run Rust tests
+        run: npm run test:rust

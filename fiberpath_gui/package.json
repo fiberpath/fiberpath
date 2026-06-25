@@ -19,6 +19,7 @@
     "format:check": "cd src-tauri && cargo fmt --check",
     "format:fix": "cd src-tauri && cargo fmt",
     "clippy": "cd src-tauri && cargo clippy -- -D warnings",
+    "test:rust": "cd src-tauri && cargo test",
     "check:all": "npm run lint && npm run lint:css && npm run lint:css:vars && npm run format:check && npm run clippy",
     "test": "vitest",
     "test:ui": "vitest --ui",
