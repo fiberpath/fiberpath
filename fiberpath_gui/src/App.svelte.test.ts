@@ -13,12 +13,13 @@ beforeEach(() => {
 });
 
 describe("App.svelte (shell)", () => {
-  it("renders the Prepare workspace with the config forms and viewport placeholder", () => {
+  it("renders the Prepare workspace with the config forms and viewport", () => {
     render(App);
     expect(screen.getByText("Mandrel Parameters")).toBeInTheDocument();
     expect(screen.getByText("Tow Parameters")).toBeInTheDocument();
     expect(screen.getByText("Machine Settings")).toBeInTheDocument();
-    expect(screen.getByText("Toolpath preview")).toBeInTheDocument();
+    // empty viewport (no layers yet)
+    expect(screen.getByText("No layers to visualize")).toBeInTheDocument();
     expect(screen.getByText("Layer Properties")).toBeInTheDocument();
     expect(screen.getByText("Not connected")).toBeInTheDocument();
   });
@@ -38,7 +39,7 @@ describe("App.svelte (shell)", () => {
     render(App);
     expect(screen.queryByText("Mandrel Parameters")).toBeNull();
     // viewport still present
-    expect(screen.getByText("Toolpath preview")).toBeInTheDocument();
+    expect(screen.getByText("No layers to visualize")).toBeInTheDocument();
   });
 
   it("opens the utility drawer from its handle", async () => {

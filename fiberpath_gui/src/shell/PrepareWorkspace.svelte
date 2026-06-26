@@ -9,6 +9,7 @@
   import HoopLayerEditor from "../components/editors/HoopLayerEditor.svelte";
   import HelicalLayerEditor from "../components/editors/HelicalLayerEditor.svelte";
   import SkipLayerEditor from "../components/editors/SkipLayerEditor.svelte";
+  import Viewport from "../components/canvas/Viewport.svelte";
 
   const selected = $derived(projectSession.selectedLayer);
 </script>
@@ -34,10 +35,7 @@
   {/if}
 
   <section class="prepare__viewport" aria-label="Toolpath viewport">
-    <div class="placeholder placeholder--center">
-      <p>Toolpath preview</p>
-      <p class="placeholder__sub">Viewport migrates in #218</p>
-    </div>
+    <Viewport />
   </section>
 
   {#if !uiState.rightCollapsed}
@@ -88,22 +86,13 @@
     border-bottom: 1px solid var(--color-border);
   }
   .prepare__viewport {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: var(--color-bg);
     min-width: 0;
+    overflow: hidden;
   }
   .placeholder {
     margin: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
-  }
-  .placeholder--center {
-    text-align: center;
-  }
-  .placeholder__sub {
-    margin: var(--spacing-xs) 0 0;
-    font-size: var(--font-size-xs);
   }
 </style>
