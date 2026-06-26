@@ -6,12 +6,12 @@ from fastapi import APIRouter
 from fiberpath.config import WindDefinition
 from fiberpath.planning import plan_wind
 
-from ..schemas import ValidateResponse
+from ..schemas import BAD_REQUEST_RESPONSE, ValidateResponse
 
 router = APIRouter()
 
 
-@router.post("", response_model=ValidateResponse)
+@router.post("", response_model=ValidateResponse, responses=BAD_REQUEST_RESPONSE)
 def validate(definition: WindDefinition) -> ValidateResponse:
     """Validate a wind definition.
 

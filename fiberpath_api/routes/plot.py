@@ -5,12 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response
 from fiberpath.visualization import render_plot
 
-from ..schemas import GcodeRequest
+from ..schemas import BAD_REQUEST_RESPONSE, GcodeRequest
 
 router = APIRouter()
 
 
-@router.post("", responses={200: {"content": {"image/png": {}}}})
+@router.post("", responses={200: {"content": {"image/png": {}}}, **BAD_REQUEST_RESPONSE})
 def plot(payload: GcodeRequest) -> Response:
     """Render an unwrapped 2D preview of a G-code program as a PNG."""
     program = payload.gcode.splitlines()

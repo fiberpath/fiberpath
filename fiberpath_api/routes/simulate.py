@@ -6,12 +6,12 @@ from fastapi import APIRouter, HTTPException
 from fiberpath.simulation import simulate_program
 from fiberpath.wire import SimulationResultOut
 
-from ..schemas import GcodeRequest
+from ..schemas import BAD_REQUEST_RESPONSE, GcodeRequest
 
 router = APIRouter()
 
 
-@router.post("", response_model=SimulationResultOut)
+@router.post("", response_model=SimulationResultOut, responses=BAD_REQUEST_RESPONSE)
 def simulate(payload: GcodeRequest) -> SimulationResultOut:
     commands = payload.gcode.splitlines()
     if not any(line.strip() for line in commands):

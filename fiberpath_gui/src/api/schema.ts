@@ -109,6 +109,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ApiError
+         * @description Error envelope returned for 4xx responses (``{"detail": "..."}``).
+         */
+        ApiError: {
+            /** Detail */
+            detail: string;
+        };
         /** GcodeRequest */
         GcodeRequest: {
             /**
@@ -327,6 +335,15 @@ export interface operations {
                     "application/json": components["schemas"]["PlanResultOut"];
                 };
             };
+            /** @description Input rejected by the compute engine. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -359,6 +376,15 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                     "image/png": unknown;
+                };
+            };
+            /** @description Input rejected by the compute engine. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Validation Error */
@@ -394,6 +420,15 @@ export interface operations {
                     "application/json": components["schemas"]["SimulationResultOut"];
                 };
             };
+            /** @description Input rejected by the compute engine. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -425,6 +460,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidateResponse"];
+                };
+            };
+            /** @description Input rejected by the compute engine. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Validation Error */
