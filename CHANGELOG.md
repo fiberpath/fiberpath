@@ -16,6 +16,7 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 ### Added
 
 - `POST /plot` renders an unwrapped 2D preview of a G-code program (`{"gcode": "..."}`) and returns `image/png` bytes.
+- A typed TypeScript client for the local API, generated from the API's OpenAPI spec (`openapi-typescript` types + an `openapi-fetch` wrapper in `fiberpath_gui/src/api/`). A committed `fiberpath_gui/openapi.json` is the codegen input, and a CI drift gate regenerates both and fails if the spec or client diverges from the live API — so the frontend's view of the backend can no longer silently rot.
 
 ### Removed
 

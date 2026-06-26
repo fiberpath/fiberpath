@@ -29,6 +29,12 @@ jobs:
       - name: Run MyPy type checker
         run: uv run mypy
 
+      - name: Verify committed OpenAPI spec matches the app
+        run: |
+          uv run python scripts/export_openapi.py
+          git diff --exit-code -- fiberpath_gui/openapi.json \
+            || { echo "::error::fiberpath_gui/openapi.json is stale. Run 'npm run api:generate' in fiberpath_gui and commit."; exit 1; }
+
   test:
     name: Test (${{ matrix.os }})
     needs: lint-and-type-check

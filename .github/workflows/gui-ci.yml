@@ -24,6 +24,12 @@ jobs:
       - name: Run TypeScript type check
         run: npm run lint
 
+      - name: Verify API client matches the committed OpenAPI spec
+        run: |
+          npm run api:generate:client
+          git diff --exit-code -- src/api/schema.ts \
+            || { echo "::error::src/api/schema.ts is stale. Run 'npm run api:generate' and commit."; exit 1; }
+
       - name: Run Stylelint (CSS)
         run: npm run lint:css
 

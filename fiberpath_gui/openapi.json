@@ -1,0 +1,580 @@
+{
+  "components": {
+    "schemas": {
+      "GcodeRequest": {
+        "properties": {
+          "gcode": {
+            "description": "G-code program to process, newline separated.",
+            "maxLength": 10000000,
+            "title": "Gcode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gcode"
+        ],
+        "title": "GcodeRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HelicalLayer": {
+        "properties": {
+          "leadInMM": {
+            "exclusiveMinimum": 0.0,
+            "title": "Leadinmm",
+            "type": "number"
+          },
+          "leadOutDegrees": {
+            "exclusiveMinimum": 0.0,
+            "title": "Leadoutdegrees",
+            "type": "number"
+          },
+          "lockDegrees": {
+            "exclusiveMinimum": 0.0,
+            "title": "Lockdegrees",
+            "type": "number"
+          },
+          "patternNumber": {
+            "exclusiveMinimum": 0.0,
+            "title": "Patternnumber",
+            "type": "integer"
+          },
+          "skipIndex": {
+            "exclusiveMinimum": 0.0,
+            "title": "Skipindex",
+            "type": "integer"
+          },
+          "skipInitialNearLock": {
+            "default": false,
+            "title": "Skipinitialnearlock",
+            "type": "boolean"
+          },
+          "windAngle": {
+            "exclusiveMinimum": 0.0,
+            "title": "Windangle",
+            "type": "number"
+          },
+          "windType": {
+            "const": "helical",
+            "default": "helical",
+            "title": "Windtype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "windAngle",
+          "patternNumber",
+          "skipIndex",
+          "lockDegrees",
+          "leadInMM",
+          "leadOutDegrees"
+        ],
+        "title": "HelicalLayer",
+        "type": "object"
+      },
+      "HoopLayer": {
+        "properties": {
+          "terminal": {
+            "default": false,
+            "title": "Terminal",
+            "type": "boolean"
+          },
+          "windType": {
+            "const": "hoop",
+            "default": "hoop",
+            "title": "Windtype",
+            "type": "string"
+          }
+        },
+        "title": "HoopLayer",
+        "type": "object"
+      },
+      "MandrelParameters": {
+        "properties": {
+          "diameter": {
+            "exclusiveMinimum": 0.0,
+            "title": "Diameter",
+            "type": "number"
+          },
+          "windLength": {
+            "exclusiveMinimum": 0.0,
+            "title": "Windlength",
+            "type": "number"
+          }
+        },
+        "required": [
+          "diameter",
+          "windLength"
+        ],
+        "title": "MandrelParameters",
+        "type": "object"
+      },
+      "PlanLayerOut": {
+        "properties": {
+          "commandCount": {
+            "title": "Commandcount",
+            "type": "integer"
+          },
+          "cumulativeTimeSeconds": {
+            "title": "Cumulativetimeseconds",
+            "type": "number"
+          },
+          "cumulativeTowMeters": {
+            "title": "Cumulativetowmeters",
+            "type": "number"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "terminal": {
+            "title": "Terminal",
+            "type": "boolean"
+          },
+          "timeSeconds": {
+            "title": "Timeseconds",
+            "type": "number"
+          },
+          "towMeters": {
+            "title": "Towmeters",
+            "type": "number"
+          },
+          "windType": {
+            "title": "Windtype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "windType",
+          "commandCount",
+          "timeSeconds",
+          "cumulativeTimeSeconds",
+          "towMeters",
+          "cumulativeTowMeters",
+          "terminal"
+        ],
+        "title": "PlanLayerOut",
+        "type": "object"
+      },
+      "PlanResultOut": {
+        "properties": {
+          "commandCount": {
+            "title": "Commandcount",
+            "type": "integer"
+          },
+          "gcode": {
+            "title": "Gcode",
+            "type": "string"
+          },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/PlanLayerOut"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+          },
+          "timeSeconds": {
+            "title": "Timeseconds",
+            "type": "number"
+          },
+          "towMeters": {
+            "title": "Towmeters",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "commandCount",
+          "gcode",
+          "timeSeconds",
+          "towMeters",
+          "layers"
+        ],
+        "title": "PlanResultOut",
+        "type": "object"
+      },
+      "SimulationResultOut": {
+        "properties": {
+          "averageFeedRateMmpm": {
+            "title": "Averagefeedratemmpm",
+            "type": "number"
+          },
+          "commandsExecuted": {
+            "title": "Commandsexecuted",
+            "type": "integer"
+          },
+          "estimatedTimeSeconds": {
+            "title": "Estimatedtimeseconds",
+            "type": "number"
+          },
+          "moves": {
+            "title": "Moves",
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "const": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+          },
+          "totalDistanceMm": {
+            "title": "Totaldistancemm",
+            "type": "number"
+          },
+          "towLengthMm": {
+            "title": "Towlengthmm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "commandsExecuted",
+          "moves",
+          "estimatedTimeSeconds",
+          "totalDistanceMm",
+          "towLengthMm",
+          "averageFeedRateMmpm"
+        ],
+        "title": "SimulationResultOut",
+        "type": "object"
+      },
+      "SkipLayer": {
+        "properties": {
+          "mandrelRotation": {
+            "title": "Mandrelrotation",
+            "type": "number"
+          },
+          "windType": {
+            "const": "skip",
+            "default": "skip",
+            "title": "Windtype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mandrelRotation"
+        ],
+        "title": "SkipLayer",
+        "type": "object"
+      },
+      "TowParameters": {
+        "properties": {
+          "thickness": {
+            "exclusiveMinimum": 0.0,
+            "title": "Thickness",
+            "type": "number"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "width",
+          "thickness"
+        ],
+        "title": "TowParameters",
+        "type": "object"
+      },
+      "ValidateResponse": {
+        "properties": {
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "title": "ValidateResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WindDefinition": {
+        "properties": {
+          "defaultFeedRate": {
+            "exclusiveMinimum": 0.0,
+            "title": "Defaultfeedrate",
+            "type": "number"
+          },
+          "layers": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "helical": "#/components/schemas/HelicalLayer",
+                  "hoop": "#/components/schemas/HoopLayer",
+                  "skip": "#/components/schemas/SkipLayer"
+                },
+                "propertyName": "windType"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/HoopLayer"
+                },
+                {
+                  "$ref": "#/components/schemas/HelicalLayer"
+                },
+                {
+                  "$ref": "#/components/schemas/SkipLayer"
+                }
+              ]
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "mandrelParameters": {
+            "$ref": "#/components/schemas/MandrelParameters"
+          },
+          "schemaVersion": {
+            "default": "1.0",
+            "description": "Version of the .wind file format schema (1.x).",
+            "pattern": "^1\\.\\d+$",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "towParameters": {
+            "$ref": "#/components/schemas/TowParameters"
+          }
+        },
+        "required": [
+          "layers",
+          "mandrelParameters",
+          "towParameters",
+          "defaultFeedRate"
+        ],
+        "title": "WindDefinition",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "FiberPath API",
+    "version": "0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/plan": {
+      "post": {
+        "description": "Plan a wind from an in-memory definition and return the G-code program.",
+        "operationId": "plan_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WindDefinition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/plot": {
+      "post": {
+        "description": "Render an unwrapped 2D preview of a G-code program as a PNG.",
+        "operationId": "plot_plot_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GcodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plot",
+        "tags": [
+          "plot"
+        ]
+      }
+    },
+    "/simulate": {
+      "post": {
+        "operationId": "simulate_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GcodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate",
+        "tags": [
+          "simulation"
+        ]
+      }
+    },
+    "/validate": {
+      "post": {
+        "description": "Validate a wind definition.\n\nThe body is schema-checked by pydantic (malformed -> 422). A full plan run\nsurfaces semantic errors (e.g. out-of-range wind angle) as PlanningError,\nwhich the app maps to 400.",
+        "operationId": "validate_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WindDefinition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate",
+        "tags": [
+          "validation"
+        ]
+      }
+    }
+  }
+}
