@@ -6,14 +6,11 @@ mod cli_path;
 mod cli_process;
 mod marlin;
 
-use base64::{engine::general_purpose::STANDARD as Base64, Engine};
 use marlin::MarlinState;
 use serde_json::Value;
 use std::fs;
 use std::process::Output;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use thiserror::Error;
 
@@ -25,85 +22,6 @@ enum FiberpathError {
     Json(#[from] serde_json::Error),
     #[error("File error: {0}")]
     File(String),
-}
-
-#[tauri::command]
-async fn plan_wind(
-    app: AppHandle,
-    input_path: String,
-    output_path: Option<String>,
-) -> Result<Value, String> {
-    let output_file = output_path.unwrap_or_else(|| temp_path("gcode"));
-    let args = vec![
-        "plan".to_string(),
-        input_path,
-        "--output".into(),
-        output_file.clone(),
-        "--json".into(),
-    ];
-
-    let output = exec_fiberpath(app, args)
-        .await
-        .map_err(|err| err.to_string())?;
-    parse_json_payload(output).map(|mut payload| {
-        if let Value::Object(ref mut obj) = payload {
-            obj.entry("output".to_string())
-                .or_insert(Value::String(output_file));
-        }
-        payload
-    })
-}
-
-#[tauri::command]
-async fn simulate_program(app: AppHandle, gcode_path: String) -> Result<Value, String> {
-    let args = vec!["simulate".into(), gcode_path, "--json".into()];
-    let output = exec_fiberpath(app, args)
-        .await
-        .map_err(|err| err.to_string())?;
-    parse_json_payload(output)
-}
-
-#[derive(serde::Serialize)]
-struct PlotPreview {
-    path: String,
-    #[serde(rename = "imageBase64")]
-    image_base64: String,
-    warnings: Vec<String>,
-}
-
-#[tauri::command]
-async fn plot_preview(
-    app: AppHandle,
-    gcode_path: String,
-    scale: f64,
-    output_path: Option<String>,
-) -> Result<PlotPreview, String> {
-    // Keep a caller-supplied output path; auto-clean an internally generated temp PNG.
-    let (output_file, _output_temp) = match output_path {
-        Some(path) => (path, None),
-        None => {
-            let temp = TempFile::new("png");
-            (temp.path().to_string(), Some(temp))
-        }
-    };
-    let args = vec![
-        "plot".into(),
-        gcode_path,
-        "--output".into(),
-        output_file.clone(),
-        "--scale".into(),
-        scale.to_string(),
-    ];
-    exec_fiberpath(app, args)
-        .await
-        .map_err(|err| err.to_string())?;
-    let bytes =
-        fs::read(&output_file).map_err(|err| FiberpathError::File(err.to_string()).to_string())?;
-    Ok(PlotPreview {
-        path: output_file,
-        image_base64: Base64.encode(bytes),
-        warnings: vec![], // plot command doesn't generate warnings like plan does
-    })
 }
 
 #[tauri::command]
@@ -131,133 +49,6 @@ async fn stream_program(
         .await
         .map_err(|err| err.to_string())?;
     parse_json_payload(output)
-}
-
-#[tauri::command]
-async fn plot_definition(
-    app: AppHandle,
-    definition_json: String,
-    _visible_layer_count: usize,
-    output_path: Option<String>,
-) -> Result<PlotPreview, String> {
-    let mut warnings = Vec::new();
-
-    // Create temporary .wind file (auto-cleaned on drop, including error paths)
-    let wind_file = TempFile::new("wind");
-    fs::write(wind_file.path(), &definition_json).map_err(|err| {
-        FiberpathError::File(format!("Failed to write temp .wind file: {err}")).to_string()
-    })?;
-
-    // Create temporary .gcode file
-    let gcode_file = TempFile::new("gcode");
-
-    // First, run plan to convert .wind to .gcode
-    let plan_args = vec![
-        "plan".into(),
-        wind_file.path().to_string(),
-        "--output".into(),
-        gcode_file.path().to_string(),
-    ];
-    let plan_output = exec_fiberpath(app.clone(), plan_args)
-        .await
-        .map_err(|err| format!("Planning failed: {err}"))?;
-
-    // Capture stderr warnings from planner
-    let stderr = String::from_utf8_lossy(&plan_output.stderr);
-    if !stderr.is_empty() {
-        for line in stderr.lines() {
-            if !line.trim().is_empty() {
-                warnings.push(line.trim().to_string());
-            }
-        }
-    }
-
-    // Generate output path for PNG. When the caller supplies an output_path it
-    // is a user-chosen destination and must be kept; only an internally
-    // generated temp PNG is wrapped in a cleanup guard.
-    let (output_file, _output_temp) = match output_path {
-        Some(path) => (path, None),
-        None => {
-            let temp = TempFile::new("png");
-            (temp.path().to_string(), Some(temp))
-        }
-    };
-
-    // Build plot command args with scale for better visibility
-    let args = vec![
-        "plot".into(),
-        gcode_file.path().to_string(),
-        "--output".into(),
-        output_file.clone(),
-        "--scale".into(),
-        "0.5".into(), // Scale down for overview
-    ];
-
-    // Execute plot command
-    exec_fiberpath(app, args)
-        .await
-        .map_err(|err| format!("Plotting failed: {err}"))?;
-
-    // Read and encode image. The temp files are deleted when their guards drop
-    // at the end of this function (success or any earlier `?` return).
-    let bytes = fs::read(&output_file).map_err(|err| {
-        FiberpathError::File(format!("Failed to read plot output: {err}")).to_string()
-    })?;
-
-    Ok(PlotPreview {
-        path: output_file,
-        image_base64: Base64.encode(&bytes),
-        warnings,
-    })
-}
-
-/// Monotonic counter ensuring temp file names are unique within the process
-/// even when several are created in the same millisecond.
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn temp_path(extension: &str) -> String {
-    let mut path = std::env::temp_dir();
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    // A millisecond-only name collides when rapid commands (e.g. validate /
-    // preview firing on edits) create temp files in the same millisecond — one
-    // call's TempFile::Drop then deletes another's file. The PID plus a
-    // monotonic counter make every name unique within and across processes.
-    let pid = std::process::id();
-    let seq = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    path.push(format!("fiberpath-{pid}-{millis}-{seq}.{extension}"));
-    path.to_string_lossy().into_owned()
-}
-
-/// RAII guard for a throwaway temp file.
-///
-/// Deletes the file when dropped, which covers the success path *and* every
-/// early `?` return. It holds only the path (no open file handle), so the CLI
-/// subprocess can freely create and overwrite the file — avoiding the Windows
-/// sharing violations that an open-handle approach (e.g. `NamedTempFile`) would
-/// cause when the subprocess writes the same path.
-struct TempFile {
-    path: String,
-}
-
-impl TempFile {
-    fn new(extension: &str) -> Self {
-        Self {
-            path: temp_path(extension),
-        }
-    }
-
-    fn path(&self) -> &str {
-        &self.path
-    }
-}
-
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-    }
 }
 
 async fn exec_fiberpath(app: AppHandle, args: Vec<String>) -> Result<Output, FiberpathError> {
@@ -394,30 +185,6 @@ async fn get_cli_diagnostics(app: AppHandle) -> Result<Value, String> {
     }))
 }
 
-#[tauri::command]
-async fn validate_wind_definition(
-    app: AppHandle,
-    definition_json: String,
-) -> Result<Value, String> {
-    // Create temporary .wind file (auto-cleaned on drop, including error paths)
-    let wind_file = TempFile::new("wind");
-    fs::write(wind_file.path(), &definition_json).map_err(|err| {
-        FiberpathError::File(format!("Failed to write temp .wind file: {err}")).to_string()
-    })?;
-
-    // Run validate command
-    let args = vec![
-        "validate".into(),
-        wind_file.path().to_string(),
-        "--json".into(),
-    ];
-    let output = exec_fiberpath(app, args)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    parse_json_payload(output)
-}
-
 #[derive(serde::Serialize)]
 struct CliHealthResponse {
     healthy: bool,
@@ -521,14 +288,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            plan_wind,
-            simulate_program,
-            plot_preview,
-            plot_definition,
             stream_program,
             save_wind_file,
             load_wind_file,
-            validate_wind_definition,
             check_cli_health,
             get_cli_diagnostics,
             marlin::marlin_list_ports,
@@ -545,44 +307,4 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running FiberPath GUI");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{temp_path, TempFile};
-    use std::collections::HashSet;
-    use std::fs;
-    use std::path::Path;
-
-    // Regression: a millisecond-only temp name collided when many temp files
-    // were created in the same millisecond, so one call's TempFile::Drop could
-    // delete another's file. Rapidly generated paths must all be unique.
-    #[test]
-    fn temp_path_is_unique_under_rapid_calls() {
-        let paths: HashSet<String> = (0..1000).map(|_| temp_path("gcode")).collect();
-        assert_eq!(paths.len(), 1000, "temp_path produced duplicate names");
-    }
-
-    #[test]
-    fn temp_file_is_removed_on_drop() {
-        let path = {
-            let temp = TempFile::new("test");
-            fs::write(temp.path(), b"data").expect("write temp file");
-            assert!(Path::new(temp.path()).exists());
-            temp.path().to_string()
-        };
-        assert!(
-            !Path::new(&path).exists(),
-            "temp file should be deleted on drop"
-        );
-    }
-
-    #[test]
-    fn temp_file_drop_is_safe_when_file_missing() {
-        // Dropping a guard whose file was never created (or already removed)
-        // must not panic.
-        let temp = TempFile::new("test");
-        assert!(!Path::new(temp.path()).exists());
-        drop(temp);
-    }
 }

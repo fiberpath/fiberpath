@@ -5,3 +5,10 @@ src-tauri/gen/
 src-tauri/target/
 coverage/
 perf/reports/
+
+# Frozen CLI/API binaries are CI/local-build artifacts, not source.
+# Only the .gitkeep placeholders are tracked.
+bundled-cli/*
+!bundled-cli/.gitkeep
+bundled-api/*
+!bundled-api/.gitkeep

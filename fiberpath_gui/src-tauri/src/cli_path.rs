@@ -77,17 +77,3 @@ pub fn path_to_string(path: &PathBuf) -> Result<String, String> {
         .ok_or_else(|| format!("Invalid path encoding: {:?}", path))
         .map(|s| s.to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bundled_path_construction() {
-        // This test just verifies the path construction logic compiles
-        // Actual testing requires a real Tauri AppHandle which is only available at runtime
-        assert!(
-            cfg!(target_os = "windows") || cfg!(target_os = "macos") || cfg!(target_os = "linux")
-        );
-    }
-}
