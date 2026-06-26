@@ -193,10 +193,9 @@ export function createFileOperations(callbacks: FileOperationCallbacks) {
 
       if (!gcodeFilePath) return false;
 
-      const tempWindPath = gcodeFilePath.replace(/\.gcode$/, ".wind");
-      const content = JSON.stringify(windDef, null, 2);
-      await saveWindFile(tempWindPath, content);
-      await planWind(tempWindPath, gcodeFilePath);
+      // The API plans from the definition body and returns the G-code; planWind
+      // writes it to the chosen path (no temporary .wind file needed).
+      await planWind(JSON.stringify(windDef), gcodeFilePath);
 
       showInfo?.(`G-code exported to: ${gcodeFilePath}`);
       return true;
@@ -293,8 +292,7 @@ export function createFileOperations(callbacks: FileOperationCallbacks) {
 
       const result = await validateWindCmd(JSON.stringify(windDef));
 
-      // Check for both possible response formats (status: "ok" or valid: true)
-      const isValid = result.status === "ok" || result.valid === true;
+      const isValid = result.valid === true;
 
       if (isValid) {
         clearValidationErrors?.();

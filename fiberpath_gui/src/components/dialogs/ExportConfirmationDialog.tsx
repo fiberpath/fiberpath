@@ -28,7 +28,7 @@ export function ExportConfirmationDialog({
       try {
         const windDef = projectToWindDefinition(project);
         const result = await validateWindDefinition(JSON.stringify(windDef));
-        const isValid = result.valid === true || result.status === "ok";
+        const isValid = result.valid === true;
 
         if (isValid) {
           setValidationStatus("valid");

@@ -1,101 +1,156 @@
 import { invoke } from "@tauri-apps/api/core";
+
+import { getApiClient } from "./apiClient";
 import { withRetry } from "./retry";
 import {
-  PlanSummarySchema,
-  SimulationSummarySchema,
-  StreamSummarySchema,
-  PlotPreviewPayloadSchema,
-  ValidationResultSchema,
-  validateData,
   CommandError,
+  StreamSummarySchema,
   ValidationError,
-  type PlanSummary,
-  type SimulationSummary,
+  validateData,
   type StreamSummary,
-  type PlotPreviewPayload,
-  type ValidationResult,
 } from "./schemas";
 
+/** Result of an export plan: the file written and how many commands it holds. */
+export interface PlanSummary {
+  output: string;
+  commands: number;
+}
+
+/** Rendered preview payload returned to the canvas. */
+export interface PlotPreviewPayload {
+  imageBase64: string;
+  warnings: string[];
+  path: string;
+}
+
+/** Outcome of validating a wind definition. */
+export interface ValidationResult {
+  valid: boolean;
+  errors?: { field: string; message: string }[];
+}
+
+/** Map an API error body (400 `{detail}` string, or 422 pydantic list) to UI errors. */
+function mapApiErrors(body: unknown): { field: string; message: string }[] {
+  const detail = (body as { detail?: unknown } | undefined)?.detail;
+  if (typeof detail === "string") {
+    return [{ field: "", message: detail }];
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((item) => {
+      const loc = Array.isArray(item?.loc) ? item.loc.slice(1) : [];
+      return { field: loc.join("."), message: String(item?.msg ?? "Invalid value") };
+    });
+  }
+  return [{ field: "validation", message: "Unknown validation error" }];
+}
+
+function bytesToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 /**
- * Plans a wind definition file into G-code.
- * Uses runtime schema validation and light retry for transient failures.
+ * Plan a wind definition into G-code and write it to `outputPath`.
+ * The backend no longer writes files, so the gcode comes back in the response
+ * and we persist it through the file-system bridge.
  */
 export const planWind = withRetry(
-  async (inputPath: string, outputPath?: string): Promise<PlanSummary> => {
+  async (definitionJson: string, outputPath: string): Promise<PlanSummary> => {
+    const client = await getApiClient();
+    let response;
     try {
-      const result = await invoke("plan_wind", {
-        inputPath,
-        outputPath,
-      });
-      return validateData(PlanSummarySchema, result, "plan_wind response");
+      response = await client.POST("/plan", { body: JSON.parse(definitionJson) });
     } catch (error) {
-      throw new CommandError(
-        "Failed to plan wind definition",
-        "plan_wind",
-        error,
-      );
+      throw new CommandError("Failed to plan wind definition", "plan", error);
     }
+    if (response.error || !response.data) {
+      throw new CommandError("Failed to plan wind definition", "plan", response.error);
+    }
+    await saveWindFile(outputPath, response.data.gcode);
+    return { output: outputPath, commands: response.data.commandCount };
   },
-  { maxAttempts: 2 }, // Lower retry for planning - it's usually not transient
+  { maxAttempts: 2 },
 );
 
 /**
- * Simulates a generated G-code program and returns execution summary metrics.
+ * Plot an in-memory wind definition: plan it to G-code, then render a preview.
+ * `visibleLayerCount` is already applied by the caller (it slices layers before
+ * stringifying), so it is not sent separately.
  */
-export const simulateProgram = withRetry(
-  async (gcodePath: string): Promise<SimulationSummary> => {
-    try {
-      const result = await invoke("simulate_program", { gcodePath });
-      return validateData(
-        SimulationSummarySchema,
-        result,
-        "simulate_program response",
-      );
-    } catch (error) {
-      throw new CommandError(
-        "Failed to simulate program",
-        "simulate_program",
-        error,
-      );
-    }
-  },
-);
-
-/**
- * Generates a preview plot image for a G-code file at a given scale.
- */
-export const previewPlot = withRetry(
+export const plotDefinition = withRetry(
   async (
-    gcodePath: string,
-    scale: number,
-    outputPath?: string,
+    definitionJson: string,
+    _visibleLayerCount: number,
+    _outputPath?: string,
   ): Promise<PlotPreviewPayload> => {
+    const client = await getApiClient();
     try {
-      const result = await invoke("plot_preview", {
-        gcodePath,
-        scale,
-        outputPath,
+      const plan = await client.POST("/plan", { body: JSON.parse(definitionJson) });
+      if (plan.error || !plan.data) {
+        throw new CommandError("Failed to plan definition", "plan", plan.error);
+      }
+      const plot = await client.POST("/plot", {
+        body: { gcode: plan.data.gcode },
+        parseAs: "arrayBuffer",
       });
-      return validateData(
-        PlotPreviewPayloadSchema,
-        result,
-        "plot_preview response",
-      );
+      if (plot.error || !plot.data) {
+        throw new CommandError("Failed to render preview", "plot", plot.error);
+      }
+      return {
+        imageBase64: bytesToBase64(plot.data as ArrayBuffer),
+        // The API exposes no structured planner warnings yet; the preview shows none.
+        warnings: [],
+        path: "",
+      };
     } catch (error) {
-      throw new CommandError("Failed to preview plot", "plot_preview", error);
+      if (error instanceof CommandError) throw error;
+      throw new CommandError("Failed to plot definition", "plot", error);
     }
   },
 );
 
 /**
- * Streams G-code to Marlin hardware (or dry-run mode).
- * This command intentionally does not retry to avoid duplicate serial operations.
+ * Validate an in-memory wind definition. A semantic/schema failure is a normal
+ * outcome (returned as `{valid: false, errors}`), not a thrown command error.
+ */
+export const validateWindDefinition = withRetry(
+  async (definitionJson: string): Promise<ValidationResult> => {
+    const client = await getApiClient();
+    let response;
+    try {
+      response = await client.POST("/validate", { body: JSON.parse(definitionJson) });
+    } catch (error) {
+      throw new CommandError("Failed to validate wind definition", "validate", error);
+    }
+    if (response.data) {
+      // 200: the API returns {valid: true}; honour the field defensively in case
+      // it ever reports an invalid-but-200 result rather than only via 4xx.
+      return { valid: response.data.valid };
+    }
+    if (response.response.status === 400 || response.response.status === 422) {
+      return { valid: false, errors: mapApiErrors(response.error) };
+    }
+    throw new CommandError(
+      "Failed to validate wind definition",
+      "validate",
+      response.error ?? response.response.statusText,
+    );
+  },
+  { maxAttempts: 2 },
+);
+
+/**
+ * Streams G-code to Marlin hardware (or dry-run mode). Still routed through the
+ * Tauri Marlin bridge; the REST surface for this lands with #190/#199.
  */
 export async function streamProgram(
   gcodePath: string,
   options: { port?: string; baudRate: number; dryRun: boolean },
 ): Promise<StreamSummary> {
-  // Don't retry streaming - it's a deliberate serial operation
   try {
     const result = await invoke("stream_program", {
       gcodePath,
@@ -110,54 +165,20 @@ export async function streamProgram(
 }
 
 /**
- * Plots an in-memory wind definition and returns image payload + warnings.
- */
-export const plotDefinition = withRetry(
-  async (
-    definitionJson: string,
-    visibleLayerCount: number,
-    outputPath?: string,
-  ): Promise<PlotPreviewPayload> => {
-    try {
-      const result = await invoke("plot_definition", {
-        definitionJson,
-        visibleLayerCount,
-        outputPath,
-      });
-      return validateData(
-        PlotPreviewPayloadSchema,
-        result,
-        "plot_definition response",
-      );
-    } catch (error) {
-      throw new CommandError(
-        "Failed to plot definition",
-        "plot_definition",
-        error,
-      );
-    }
-  },
-);
-
-/**
- * Saves `.wind` content to disk through the Tauri backend command bridge.
+ * Saves file content to disk through the Tauri file-system bridge (native).
  */
 export const saveWindFile = withRetry(
   async (path: string, content: string): Promise<void> => {
     try {
       await invoke("save_wind_file", { path, content });
     } catch (error) {
-      throw new CommandError(
-        "Failed to save wind file",
-        "save_wind_file",
-        error,
-      );
+      throw new CommandError("Failed to save wind file", "save_wind_file", error);
     }
   },
 );
 
 /**
- * Loads `.wind` content from disk through the Tauri backend command bridge.
+ * Loads file content from disk through the Tauri file-system bridge (native).
  */
 export const loadWindFile = withRetry(async (path: string): Promise<string> => {
   try {
@@ -170,28 +191,3 @@ export const loadWindFile = withRetry(async (path: string): Promise<string> => {
     throw new CommandError("Failed to load wind file", "load_wind_file", error);
   }
 });
-
-/**
- * Validates an in-memory wind definition JSON payload via CLI command.
- */
-export const validateWindDefinition = withRetry(
-  async (definitionJson: string): Promise<ValidationResult> => {
-    try {
-      const result = await invoke("validate_wind_definition", {
-        definitionJson,
-      });
-      return validateData(
-        ValidationResultSchema,
-        result,
-        "validate_wind_definition response",
-      );
-    } catch (error) {
-      throw new CommandError(
-        "Failed to validate wind definition",
-        "validate_wind_definition",
-        error,
-      );
-    }
-  },
-  { maxAttempts: 2 }, // Lower retry for validation - errors are usually not transient
-);

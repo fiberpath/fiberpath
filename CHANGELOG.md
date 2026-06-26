@@ -13,6 +13,7 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 - The API compute routes are now **body-only**: `POST /plan` and `POST /validate` take a wind definition in the request body (the same JSON as a `.wind` file), and `POST /simulate` takes a G-code program (`{"gcode": "..."}`). They no longer accept filesystem paths, so the path-allow-list policy and its `FIBERPATH_API_ALLOWED_ROOTS` setting are gone. `POST /plan` now returns the generated program directly in the `gcode` field instead of writing a `.gcode` file and returning its path. This makes the service stateless and safe to run as a local sidecar.
 - Compute results (`/plan`, `/simulate`) now share **one versioned wire schema** (`fiberpath/wire.py`): every response carries a `schemaVersion` and all fields are camelCase (e.g. `commandCount`, `cumulativeTimeSeconds`, `estimatedTimeSeconds`). The wire format is decoupled from the internal engine dataclasses so it is no longer hostage to engine refactors, and the per-route hand-rename DTOs are gone.
 - The generated `.wind` JSON Schema now carries a canonical versioned `$id` (`https://fiberpath.org/schemas/wind/1.0/wind.schema.json`) and is produced deterministically from the `WindDefinition` model. The orphaned second generator (`scripts/export_schema.py`) is removed, leaving `scripts/generate_schema.py` as the single source, and a CI drift gate now fails if the committed `wind-schema.json` or its generated TypeScript types drift from the model.
+- The desktop app now runs the API as a **bundled local sidecar**: the Tauri shell spawns and supervises a frozen `fiberpath-api` server (ephemeral `127.0.0.1` port, restart-on-crash, killed on exit) and the GUI's compute operations (export, preview, validate) call it through the generated typed client instead of shelling out to the CLI. The hand-maintained GUI response types are retired in favour of the OpenAPI-generated ones. (Driving a Marlin controller still uses the existing path; its REST surface lands with #190/#199.)
 
 ### Added
 
@@ -26,6 +27,7 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ### Fixed
 
+- The bundled `fiberpath` CLI (and the new API sidecar) are now found on Linux/macOS desktop builds. Resources from the `../bundled-*/*` globs land under a `_up_/` subdirectory on **every** platform, but the lookup only checked it on Windows — so installed Linux/macOS apps reported "CLI Backend Unavailable" and the sidecar failed to start. The lookup now checks `_up_/` first on all platforms.
 - The `.wind` file `schemaVersion` is no longer pinned to the exact string `1.0`. It now accepts any `1.x` minor (additive evolution); an absent value is treated as the legacy `1.0`, and an incompatible major (`2.0`+) is rejected. `schemaVersion` is now a native field on the `WindDefinition` model (`pattern: ^1\.\d+$`) — the single source of truth — so the backend validates it on load and the schema generator no longer needs to inject a `const: "1.0"`. The GUI's `.wind` validator was relaxed from `z.literal("1.0")` to the same `1.x` pattern.
 
 ## [0.7.4] - 2026-06-25

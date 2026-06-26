@@ -4,27 +4,9 @@ import { z } from "zod";
 // Tauri Command Response Schemas
 // ===========================
 
-/**
- * Schema for PlanSummary response from plan_wind command
- */
-export const PlanSummarySchema = z.object({
-  output: z.string(),
-  commands: z.number().int().nonnegative(),
-  layers: z.number().int().nonnegative().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-/**
- * Schema for SimulationSummary response from simulate_program command
- */
-export const SimulationSummarySchema = z.object({
-  commands_executed: z.number().int().nonnegative(),
-  moves: z.number().int().nonnegative(),
-  estimated_time_s: z.number().nonnegative(),
-  total_distance_mm: z.number().nonnegative(),
-  average_feed_rate_mmpm: z.number().nonnegative(),
-  tow_length_mm: z.number().nonnegative(),
-});
+// Compute responses (plan/simulate/plot/validate) are typed by the generated
+// OpenAPI client (src/api) now, not hand-maintained here. Only the schemas for
+// responses still served over the Tauri bridge (stream, CLI health) remain.
 
 /**
  * Schema for StreamSummary response from stream_program command
@@ -38,38 +20,12 @@ export const StreamSummarySchema = z.object({
 });
 
 /**
- * Schema for PlotPreviewPayload response from plot_preview and plot_definition commands
- */
-export const PlotPreviewPayloadSchema = z.object({
-  path: z.string(),
-  imageBase64: z.string(),
-  warnings: z.array(z.string()),
-});
-
-/**
  * Schema for CliHealthResponse from check_cli_health command
  */
 export const CliHealthResponseSchema = z.object({
   healthy: z.boolean(),
   version: z.string().nullable(),
   errorMessage: z.string().nullable(),
-});
-
-/**
- * Schema for ValidationResult response from validate_wind_definition command
- */
-export const ValidationResultSchema = z.object({
-  valid: z.boolean().optional(),
-  status: z.string().optional(),
-  path: z.string().optional(),
-  errors: z
-    .array(
-      z.object({
-        field: z.string(),
-        message: z.string(),
-      }),
-    )
-    .optional(),
 });
 
 // ===========================
@@ -155,11 +111,7 @@ export const WindDefinitionSchema = z.object({
 // Type Inference Helpers
 // ===========================
 
-export type PlanSummary = z.infer<typeof PlanSummarySchema>;
-export type SimulationSummary = z.infer<typeof SimulationSummarySchema>;
 export type StreamSummary = z.infer<typeof StreamSummarySchema>;
-export type PlotPreviewPayload = z.infer<typeof PlotPreviewPayloadSchema>;
-export type ValidationResult = z.infer<typeof ValidationResultSchema>;
 export type WindDefinition = z.infer<typeof WindDefinitionSchema>;
 
 // ===========================

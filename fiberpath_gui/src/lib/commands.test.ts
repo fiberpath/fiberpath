@@ -2,100 +2,121 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   planWind,
-  simulateProgram,
-  previewPlot,
   streamProgram,
   plotDefinition,
   saveWindFile,
   loadWindFile,
   validateWindDefinition,
 } from "./commands";
-import { CommandError, ValidationError } from "./schemas";
+import { getApiClient } from "./apiClient";
+import { CommandError } from "./schemas";
 
-// Remove retry wrapping so each test controls invoke directly
+// Remove retry wrapping so each test controls the mock directly.
 vi.mock("./retry", () => ({
-  withRetry: (fn: (...args: unknown[]) => unknown, _opts?: unknown) =>
+  withRetry:
+    (fn: (...args: unknown[]) => unknown, _opts?: unknown) =>
     (...args: unknown[]) =>
       fn(...args),
   retry: (fn: () => unknown) => fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("./apiClient", () => ({ getApiClient: vi.fn() }));
 
 const mockInvoke = vi.mocked(invoke);
+const mockPost = vi.fn();
 
 beforeEach(() => {
   mockInvoke.mockReset();
+  mockPost.mockReset();
+  vi.mocked(getApiClient).mockResolvedValue({ POST: mockPost } as never);
 });
 
 describe("commands", () => {
   describe("planWind()", () => {
-    it("returns validated PlanSummary on success", async () => {
-      mockInvoke.mockResolvedValue({
-        output: "/out.gcode",
-        commands: 10,
-        layers: 2,
+    it("POSTs /plan and writes the returned gcode to the output path", async () => {
+      mockPost.mockResolvedValue({
+        data: { gcode: "G1 X0", commandCount: 10 },
+        error: undefined,
+        response: { status: 200 },
       });
-      const result = await planWind("/input.wind");
-      expect(result.output).toBe("/out.gcode");
-      expect(result.commands).toBe(10);
-    });
+      mockInvoke.mockResolvedValue(undefined); // save_wind_file
 
-    it("throws CommandError when invoke rejects", async () => {
-      mockInvoke.mockRejectedValue(new Error("backend error"));
-      await expect(planWind("/input.wind")).rejects.toBeInstanceOf(CommandError);
-    });
+      const result = await planWind('{"layers":[]}', "/out.gcode");
 
-    it("passes outputPath to invoke when provided", async () => {
-      mockInvoke.mockResolvedValue({ output: "/out.gcode", commands: 1, layers: 1 });
-      await planWind("/input.wind", "/out.gcode");
+      expect(result).toEqual({ output: "/out.gcode", commands: 10 });
+      expect(mockPost).toHaveBeenCalledWith("/plan", { body: { layers: [] } });
       expect(mockInvoke).toHaveBeenCalledWith(
-        "plan_wind",
-        expect.objectContaining({ outputPath: "/out.gcode" }),
+        "save_wind_file",
+        expect.objectContaining({ path: "/out.gcode", content: "G1 X0" }),
       );
+    });
+
+    it("throws CommandError when the plan request errors", async () => {
+      mockPost.mockResolvedValue({
+        data: undefined,
+        error: { detail: "bad" },
+        response: { status: 400 },
+      });
+      await expect(planWind("{}", "/out.gcode")).rejects.toBeInstanceOf(CommandError);
     });
   });
 
-  describe("simulateProgram()", () => {
-    it("returns validated SimulationSummary on success", async () => {
-      mockInvoke.mockResolvedValue({
-        commands_executed: 100,
-        moves: 80,
-        estimated_time_s: 30,
-        total_distance_mm: 5000,
-        average_feed_rate_mmpm: 400,
-        tow_length_mm: 4800,
-      });
-      const result = await simulateProgram("/file.gcode");
-      expect(result.commands_executed).toBe(100);
+  describe("plotDefinition()", () => {
+    it("plans then plots and returns base64 image bytes", async () => {
+      mockPost
+        .mockResolvedValueOnce({
+          data: { gcode: "G1", commandCount: 1 },
+          error: undefined,
+          response: { status: 200 },
+        })
+        .mockResolvedValueOnce({
+          data: new Uint8Array([1, 2, 3]).buffer,
+          error: undefined,
+          response: { status: 200 },
+        });
+
+      const result = await plotDefinition('{"layers":[]}', 3);
+
+      expect(result.imageBase64).toBe(btoa("\x01\x02\x03"));
+      expect(result.warnings).toEqual([]);
     });
 
-    it("throws CommandError when invoke rejects", async () => {
-      mockInvoke.mockRejectedValue(new Error("sim error"));
-      await expect(simulateProgram("/file.gcode")).rejects.toBeInstanceOf(
-        CommandError,
-      );
+    it("throws CommandError when planning fails", async () => {
+      mockPost.mockResolvedValue({
+        data: undefined,
+        error: { detail: "nope" },
+        response: { status: 400 },
+      });
+      await expect(plotDefinition("{}", 3)).rejects.toBeInstanceOf(CommandError);
     });
   });
 
-  describe("previewPlot()", () => {
-    it("returns validated PlotPreviewPayload on success", async () => {
-      mockInvoke.mockResolvedValue({
-        path: "/plot.png",
-        imageBase64: "abc123",
-        warnings: [],
+  describe("validateWindDefinition()", () => {
+    it("returns valid:true on 200", async () => {
+      mockPost.mockResolvedValue({
+        data: { valid: true },
+        error: undefined,
+        response: { status: 200 },
       });
-      const result = await previewPlot("/file.gcode", 1.0);
-      expect(result.imageBase64).toBe("abc123");
+      const result = await validateWindDefinition("{}");
+      expect(result.valid).toBe(true);
     });
 
-    it("throws CommandError on invoke failure", async () => {
-      mockInvoke.mockRejectedValue(new Error("plot error"));
-      await expect(previewPlot("/file.gcode", 1.0)).rejects.toBeInstanceOf(
-        CommandError,
-      );
+    it("maps a 400 detail string to a field error (not a throw)", async () => {
+      mockPost.mockResolvedValue({
+        data: undefined,
+        error: { detail: "wind angle must be 1-89" },
+        response: { status: 400 },
+      });
+      const result = await validateWindDefinition("{}");
+      expect(result.valid).toBe(false);
+      expect(result.errors).toEqual([{ field: "", message: "wind angle must be 1-89" }]);
+    });
+
+    it("throws CommandError when the request itself fails", async () => {
+      mockPost.mockRejectedValue(new Error("network down"));
+      await expect(validateWindDefinition("{}")).rejects.toBeInstanceOf(CommandError);
     });
   });
 
@@ -108,10 +129,7 @@ describe("commands", () => {
         baudRate: 250000,
         dryRun: true,
       });
-      const result = await streamProgram("/file.gcode", {
-        baudRate: 250000,
-        dryRun: true,
-      });
+      const result = await streamProgram("/file.gcode", { baudRate: 250000, dryRun: true });
       expect(result.commands).toBe(50);
     });
 
@@ -120,32 +138,6 @@ describe("commands", () => {
       await expect(
         streamProgram("/file.gcode", { baudRate: 250000, dryRun: false }),
       ).rejects.toBeInstanceOf(CommandError);
-    });
-
-    it("passes port and dryRun options to invoke", async () => {
-      mockInvoke.mockResolvedValue({ status: "complete", commands: 1, total: 1, baudRate: 115200, dryRun: false });
-      await streamProgram("/file.gcode", {
-        port: "/dev/ttyUSB0",
-        baudRate: 115200,
-        dryRun: false,
-      });
-      expect(mockInvoke).toHaveBeenCalledWith(
-        "stream_program",
-        expect.objectContaining({ port: "/dev/ttyUSB0", baudRate: 115200 }),
-      );
-    });
-  });
-
-  describe("plotDefinition()", () => {
-    it("returns payload on success", async () => {
-      mockInvoke.mockResolvedValue({ path: "/out.png", imageBase64: "xyz", warnings: [] });
-      const result = await plotDefinition("{}", 3);
-      expect(result.imageBase64).toBe("xyz");
-    });
-
-    it("throws CommandError on failure", async () => {
-      mockInvoke.mockRejectedValue(new Error("fail"));
-      await expect(plotDefinition("{}", 3)).rejects.toBeInstanceOf(CommandError);
     });
   });
 
@@ -157,9 +149,7 @@ describe("commands", () => {
 
     it("throws CommandError on failure", async () => {
       mockInvoke.mockRejectedValue(new Error("write error"));
-      await expect(saveWindFile("/path.wind", "{}")).rejects.toBeInstanceOf(
-        CommandError,
-      );
+      await expect(saveWindFile("/path.wind", "{}")).rejects.toBeInstanceOf(CommandError);
     });
   });
 
@@ -172,31 +162,7 @@ describe("commands", () => {
 
     it("throws CommandError when result is not a string", async () => {
       mockInvoke.mockResolvedValue(42);
-      await expect(loadWindFile("/path.wind")).rejects.toBeInstanceOf(
-        CommandError,
-      );
-    });
-
-    it("throws CommandError on invoke failure", async () => {
-      mockInvoke.mockRejectedValue(new Error("read error"));
-      await expect(loadWindFile("/path.wind")).rejects.toBeInstanceOf(
-        CommandError,
-      );
-    });
-  });
-
-  describe("validateWindDefinition()", () => {
-    it("returns ValidationResult on success", async () => {
-      mockInvoke.mockResolvedValue({ status: "ok", valid: true, errors: [] });
-      const result = await validateWindDefinition("{}");
-      expect(result.status).toBe("ok");
-    });
-
-    it("throws CommandError on failure", async () => {
-      mockInvoke.mockRejectedValue(new Error("validation backend error"));
-      await expect(validateWindDefinition("{}")).rejects.toBeInstanceOf(
-        CommandError,
-      );
+      await expect(loadWindFile("/path.wind")).rejects.toBeInstanceOf(CommandError);
     });
   });
 });

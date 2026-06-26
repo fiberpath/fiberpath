@@ -31,18 +31,19 @@ fn get_bundled_api_path(app: &AppHandle) -> Result<PathBuf, String> {
         .resource_dir()
         .map_err(|e| format!("Failed to resolve resource directory: {}", e))?;
 
-    // On Windows, installed apps place bundled resources under `_up_`; dev builds
-    // put them directly in the resource dir. Check both (matches cli_path).
-    let path = if cfg!(target_os = "windows") {
-        let exe = "fiberpath-api.exe";
-        let installed = resource_dir.join("_up_").join("bundled-api").join(exe);
-        if installed.exists() {
-            installed
-        } else {
-            resource_dir.join("bundled-api").join(exe)
-        }
+    // Resources from the `../bundled-api/*` glob land under a "_up_" subdirectory
+    // on *every* platform (Tauri encodes the parent-dir `../`). Prefer that
+    // layout; fall back to a flat `bundled-api/` (dev builds). Matches cli_path.
+    let exe = if cfg!(target_os = "windows") {
+        "fiberpath-api.exe"
     } else {
-        resource_dir.join("bundled-api").join("fiberpath-api")
+        "fiberpath-api"
+    };
+    let up_layout = resource_dir.join("_up_").join("bundled-api").join(exe);
+    let path = if up_layout.exists() {
+        up_layout
+    } else {
+        resource_dir.join("bundled-api").join(exe)
     };
 
     Ok(path)

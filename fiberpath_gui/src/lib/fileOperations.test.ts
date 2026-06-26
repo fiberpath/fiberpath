@@ -231,7 +231,6 @@ describe("fileOperations", () => {
       mockPlanWind.mockResolvedValue({
         output: "/output.gcode",
         commands: 10,
-        layers: 2,
       });
       const ops = createFileOperations(callbacks);
       const result = await ops.handleExportGcode();
@@ -295,7 +294,6 @@ describe("fileOperations", () => {
     it("clears errors and shows info on valid definition", async () => {
       const callbacks = makeCallbacks();
       mockValidateWindDefinition.mockResolvedValue({
-        status: "ok",
         valid: true,
         errors: [],
       });
@@ -309,7 +307,6 @@ describe("fileOperations", () => {
     it("sets validation errors and throws when backend returns errors", async () => {
       const callbacks = makeCallbacks();
       mockValidateWindDefinition.mockResolvedValue({
-        status: "error",
         valid: false,
         errors: [{ field: "mandrel.diameter", message: "Must be positive" }],
       });

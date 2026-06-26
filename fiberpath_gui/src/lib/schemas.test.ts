@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  PlanSummarySchema,
-  SimulationSummarySchema,
   StreamSummarySchema,
-  PlotPreviewPayloadSchema,
-  ValidationResultSchema,
   MandrelParametersSchema,
   TowParametersSchema,
   WindHoopLayerSchema,
@@ -24,98 +20,6 @@ import {
 } from "./schemas";
 
 describe("schemas", () => {
-  describe("Tauri Response Schemas", () => {
-    describe("PlanSummarySchema", () => {
-      it("should validate valid plan summary", () => {
-        const data = {
-          output: "/path/to/output.gcode",
-          commands: 150,
-          layers: 3,
-          metadata: { key: "value" },
-        };
-
-        const result = PlanSummarySchema.safeParse(data);
-        expect(result.success).toBe(true);
-      });
-
-      it("should reject negative commands", () => {
-        const data = {
-          output: "/path/to/output.gcode",
-          commands: -5,
-        };
-
-        const result = PlanSummarySchema.safeParse(data);
-        expect(result.success).toBe(false);
-      });
-
-      it("should allow optional fields to be missing", () => {
-        const data = {
-          output: "/path/to/output.gcode",
-          commands: 100,
-        };
-
-        const result = PlanSummarySchema.safeParse(data);
-        expect(result.success).toBe(true);
-      });
-    });
-
-    describe("SimulationSummarySchema", () => {
-      it("should validate valid simulation summary", () => {
-        const data = {
-          commands_executed: 150,
-          moves: 120,
-          estimated_time_s: 300.5,
-          total_distance_mm: 5000.25,
-          average_feed_rate_mmpm: 2000,
-          tow_length_mm: 4500.75,
-        };
-
-        const result = SimulationSummarySchema.safeParse(data);
-        expect(result.success).toBe(true);
-      });
-
-      it("should reject negative values", () => {
-        const data = {
-          commands_executed: -1,
-          moves: 100,
-          estimated_time_s: 200,
-          total_distance_mm: 1000,
-          average_feed_rate_mmpm: 2000,
-          tow_length_mm: 900,
-        };
-
-        const result = SimulationSummarySchema.safeParse(data);
-        expect(result.success).toBe(false);
-      });
-    });
-
-    describe("ValidationResultSchema", () => {
-      it("should validate success result", () => {
-        const data = {
-          valid: true,
-          status: "ok",
-        };
-
-        const result = ValidationResultSchema.safeParse(data);
-        expect(result.success).toBe(true);
-      });
-
-      it("should validate error result with errors array", () => {
-        const data = {
-          valid: false,
-          status: "error",
-          errors: [
-            { field: "mandrel.diameter", message: "Must be positive" },
-            { field: "tow.width", message: "Required field" },
-          ],
-        };
-
-        const result = ValidationResultSchema.safeParse(data);
-        expect(result.success).toBe(true);
-      });
-    });
-  });
-
   describe("Wind File Structure Schemas", () => {
     describe("MandrelParametersSchema", () => {
       it("should validate valid mandrel", () => {

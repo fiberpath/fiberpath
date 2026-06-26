@@ -51,28 +51,19 @@ pub fn get_bundled_cli_path(app: &AppHandle) -> Result<PathBuf, String> {
         .resource_dir()
         .map_err(|e| format!("Failed to resolve resource directory: {}", e))?;
 
-    // On Windows, Tauri v2 places bundled resources in a "_up_" subdirectory for installed apps,
-    // but directly in the resource dir for dev builds.
-    // We check both locations.
-    let cli_path = if cfg!(target_os = "windows") {
-        let exe_name = "fiberpath.exe";
-
-        // Try _up_/bundled-cli/fiberpath.exe first (installed app)
-        let installed_path = resource_dir.join("_up_").join("bundled-cli").join(exe_name);
-        if installed_path.exists() {
-            installed_path
-        } else {
-            // Fall back to bundled-cli/fiberpath.exe (dev build)
-            resource_dir.join("bundled-cli").join(exe_name)
-        }
-    } else if cfg!(target_os = "macos") {
-        // macOS: bundled-cli/fiberpath
-        resource_dir.join("bundled-cli").join("fiberpath")
-    } else if cfg!(target_os = "linux") {
-        // Linux: bundled-cli/fiberpath
-        resource_dir.join("bundled-cli").join("fiberpath")
+    // Resources bundled from the `../bundled-cli/*` glob land under a "_up_"
+    // subdirectory on *every* platform (Tauri encodes the parent-dir `../`).
+    // Prefer that layout; fall back to a flat `bundled-cli/` (dev builds).
+    let exe_name = if cfg!(target_os = "windows") {
+        "fiberpath.exe"
     } else {
-        return Err(format!("Unsupported platform: {}", std::env::consts::OS));
+        "fiberpath"
+    };
+    let up_layout = resource_dir.join("_up_").join("bundled-cli").join(exe_name);
+    let cli_path = if up_layout.exists() {
+        up_layout
+    } else {
+        resource_dir.join("bundled-cli").join(exe_name)
     };
 
     Ok(cli_path)
