@@ -1,46 +1,68 @@
 <script lang="ts">
-  // Dev-only scaffold for the #215 decision gate: shows the migrated config forms
-  // in isolation so they can be viewed and visually compared against the React app.
-  // The real Prepare/Machine workspace shell arrives in #216; index.html keeps
-  // mounting React until the #221 cutover.
-  import MandrelForm from "./components/forms/MandrelForm.svelte";
-  import TowForm from "./components/forms/TowForm.svelte";
-  import MachineSettingsForm from "./components/forms/MachineSettingsForm.svelte";
+  // The Svelte app shell. Unlike the React `App`, which assembled every region as
+  // element trees and threaded them through `MainTab` as four `ReactNode` props,
+  // each region is a component that owns its own layout here.
+  //
+  // index.html keeps mounting React until the #221 cutover; this is reachable via
+  // the dev-only index.svelte.html entry.
+  import MenuBar from "./shell/MenuBar.svelte";
+  import WorkspaceTabs from "./shell/WorkspaceTabs.svelte";
+  import StatusBar from "./shell/StatusBar.svelte";
+  import PrepareWorkspace from "./shell/PrepareWorkspace.svelte";
+  import MachineWorkspace from "./shell/MachineWorkspace.svelte";
+  import UtilityDrawer from "./shell/UtilityDrawer.svelte";
+  import { uiState } from "./state/ui-state.svelte";
   import { projectSession } from "./state/project-session.svelte";
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "1") {
+        e.preventDefault();
+        uiState.setWorkspace("prepare");
+      } else if (e.key === "2") {
+        e.preventDefault();
+        uiState.setWorkspace("machine");
+      }
+    }
+  }
+
+  function onBeforeUnload(e: BeforeUnloadEvent) {
+    if (projectSession.isDirty) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  }
 </script>
 
-<div class="svelte-gate">
-  <header class="svelte-gate__bar">
-    <strong>FiberPath — Svelte 5 foundation (#215)</strong>
-    <span>{projectSession.isDirty ? "● unsaved" : "saved"}</span>
-  </header>
-  <aside class="svelte-gate__panel">
-    <h2 class="panel-header">Parameters</h2>
-    <MandrelForm />
-    <TowForm />
-    <MachineSettingsForm />
-  </aside>
+<svelte:window onkeydown={onKeydown} onbeforeunload={onBeforeUnload} />
+
+<div class="app">
+  <MenuBar />
+  <WorkspaceTabs />
+  <main class="app__workspace">
+    {#if uiState.workspace === "prepare"}
+      <PrepareWorkspace />
+    {:else}
+      <MachineWorkspace />
+    {/if}
+  </main>
+  <UtilityDrawer />
+  <StatusBar />
 </div>
 
 <style>
-  .svelte-gate {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-surface, #1a1a1a);
-    color: var(--color-text, #e0e0e0);
+  .app {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto auto;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-family-base);
+    font-size: var(--font-size-base);
   }
-  .svelte-gate__bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid var(--color-border, #333);
-    font-size: 0.85rem;
-  }
-  .svelte-gate__panel {
-    width: 320px;
-    padding: 1rem;
-    overflow-y: auto;
+  .app__workspace {
+    min-height: 0;
+    overflow: hidden;
   }
 </style>

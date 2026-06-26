@@ -21,7 +21,6 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/main.tsx',
         'src/main.svelte.ts',
-        'src/App.svelte',
         'src/tests/**',
         'src/vite-env.d.ts',
         'src/types/wind-schema.ts',
