@@ -1,5 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
+
+// The Machine workspace mounts real marlin-api wiring; stub it so the shell tests
+// don't reach for a Tauri runtime.
+vi.mock("./lib/marlin-api", () => ({
+  listSerialPorts: vi.fn(() => Promise.resolve([])),
+  onStreamStarted: vi.fn(() => Promise.resolve(() => {})),
+  onStreamProgress: vi.fn(() => Promise.resolve(() => {})),
+  onStreamComplete: vi.fn(() => Promise.resolve(() => {})),
+  onStreamError: vi.fn(() => Promise.resolve(() => {})),
+}));
+
 import App from "./App.svelte";
 import { uiState } from "./state/ui-state.svelte";
 import { projectSession } from "./state/project-session.svelte";
@@ -27,7 +38,7 @@ describe("App.svelte (shell)", () => {
   it("switches to the Machine workspace on Alt+2 and back on Alt+1", async () => {
     render(App);
     await fireEvent.keyDown(window, { key: "2", altKey: true });
-    expect(screen.getByText("Machine control")).toBeInTheDocument();
+    expect(screen.getByText("Connection")).toBeInTheDocument(); // machine workspace
     expect(screen.queryByText("Mandrel Parameters")).toBeNull();
 
     await fireEvent.keyDown(window, { key: "1", altKey: true });

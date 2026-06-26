@@ -1,29 +1,43 @@
 <script lang="ts">
-  // Placeholder until the Marlin streaming workspace migrates (#219).
+  import { machineSession as m } from "../state/machine-session.svelte";
+  import ConnectionSection from "../components/machine/ConnectionSection.svelte";
+  import ManualControlSection from "../components/machine/ManualControlSection.svelte";
+  import FileStreamingSection from "../components/machine/FileStreamingSection.svelte";
+  import StreamLog from "../components/machine/StreamLog.svelte";
+
+  // Subscribe to Tauri stream lifecycle events while the workspace is mounted.
+  $effect(() => {
+    const pending = m.subscribe();
+    return () => {
+      pending.then((cleanup) => cleanup());
+    };
+  });
 </script>
 
 <div class="machine">
-  <div class="machine__placeholder">
-    <p>Machine control</p>
-    <p class="machine__sub">Connection, streaming and console migrate in #219</p>
+  <div class="machine__controls">
+    <ConnectionSection />
+    <ManualControlSection />
+    <FileStreamingSection />
+  </div>
+  <div class="machine__log">
+    <StreamLog />
   </div>
 </div>
 
 <style>
   .machine {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: 320px 1fr;
     height: 100%;
-    background: var(--color-bg);
+    min-height: 0;
   }
-  .machine__placeholder {
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+  .machine__controls {
+    overflow-y: auto;
+    background: var(--color-bg-panel);
   }
-  .machine__sub {
-    margin: var(--spacing-xs) 0 0;
-    font-size: var(--font-size-xs);
+  .machine__log {
+    min-width: 0;
+    min-height: 0;
   }
 </style>
