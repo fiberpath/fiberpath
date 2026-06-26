@@ -29,9 +29,10 @@ def test_simulate_from_gcode_body() -> None:
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["commands"] == 5
+    assert payload["schemaVersion"] == "1.0"
+    assert payload["commandsExecuted"] == 5
     assert payload["moves"] == 3
-    assert payload["estimated_time_s"] > 0
+    assert payload["estimatedTimeSeconds"] > 0
 
 
 def test_simulate_rejects_empty_program() -> None:
@@ -53,4 +54,4 @@ def test_plan_simulate_roundtrip() -> None:
 
     sim = client.post("/simulate", json={"gcode": gcode})
     assert sim.status_code == 200, sim.text
-    assert sim.json()["commands"] > 0
+    assert sim.json()["commandsExecuted"] > 0

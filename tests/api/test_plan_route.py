@@ -42,13 +42,15 @@ def test_plan_returns_gcode_and_metrics() -> None:
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["commands"] > 0
+    assert payload["schemaVersion"] == "1.0"
+    assert payload["commandCount"] > 0
     # The body carries the actual program text (no disk round-trip).
     assert payload["gcode"].startswith("; Parameters")
     assert "G0" in payload["gcode"]
     assert payload["timeSeconds"] > 0
     assert payload["towMeters"] > 0
     assert payload["layers"]
+    assert payload["layers"][0]["windType"]
 
 
 def test_plan_rejects_semantic_error() -> None:
