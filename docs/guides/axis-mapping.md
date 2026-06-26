@@ -15,7 +15,7 @@ This matches Marlin rotational-axis semantics and is the recommended production 
 ## CLI and API Behavior
 
 - CLI `fiberpath plan` always generates XAB output.
-- API `POST /plan/from-file` always generates XAB output.
+- API `POST /plan` always generates XAB output.
 - GUI export also generates XAB output through the CLI.
 
 No axis-format flag or request field is required.

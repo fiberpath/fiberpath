@@ -1,13 +1,21 @@
-"""Pydantic schemas shared by API routes."""
+"""Pydantic schemas shared by API routes.
+
+Requests and responses are body-only: planning and validation take a
+``WindDefinition`` body, while simulation and plotting take a G-code program.
+No filesystem paths cross the API boundary.
+"""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
 
-class FilePathRequest(BaseModel):
-    path: str = Field(..., description="Absolute or workspace path to an input file.")
-    verbose: bool = Field(default=False, description="Emit verbose planner output")
+class GcodeRequest(BaseModel):
+    gcode: str = Field(
+        ...,
+        max_length=10_000_000,
+        description="G-code program to process, newline separated.",
+    )
 
 
 class PlanLayer(BaseModel):
@@ -23,7 +31,7 @@ class PlanLayer(BaseModel):
 
 class PlanResponse(BaseModel):
     commands: int
-    output: str
+    gcode: str = Field(..., description="The generated G-code program.")
     timeSeconds: float
     towMeters: float
     layers: list[PlanLayer]
@@ -39,5 +47,4 @@ class SimulationResponse(BaseModel):
 
 
 class ValidateResponse(BaseModel):
-    status: str
-    path: str
+    valid: bool

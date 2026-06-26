@@ -1,20 +1,25 @@
-"""Validation endpoints."""
+"""Validation endpoint."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from fiberpath.config import WindFileError, load_wind_definition
+from fastapi import APIRouter
+from fiberpath.config import WindDefinition
+from fiberpath.planning import plan_wind
 
-from ..path_policy import enforce_input_path_policy
-from ..schemas import FilePathRequest, ValidateResponse
+from ..schemas import ValidateResponse
 
 router = APIRouter()
 
 
-@router.post("/from-file", response_model=ValidateResponse)
-def validate_from_file(payload: FilePathRequest) -> ValidateResponse:
-    try:
-        load_wind_definition(enforce_input_path_policy(payload.path))
-    except WindFileError as exc:  # pragma: no cover - HTTP glue
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return ValidateResponse(status="ok", path=payload.path)
+@router.post("", response_model=ValidateResponse)
+def validate(definition: WindDefinition) -> ValidateResponse:
+    """Validate a wind definition.
+
+    The body is schema-checked by pydantic (malformed -> 422). A full plan run
+    surfaces semantic errors (e.g. out-of-range wind angle) as PlanningError,
+    which the app maps to 400.
+    """
+    # minimal: reuse the planner for semantic validation rather than duplicating
+    # its layer-bound checks; planning is cheap and stays the single source of truth.
+    plan_wind(definition)
+    return ValidateResponse(valid=True)

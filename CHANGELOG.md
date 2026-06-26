@@ -8,6 +8,18 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+### Changed
+
+- The API compute routes are now **body-only**: `POST /plan` and `POST /validate` take a wind definition in the request body (the same JSON as a `.wind` file), and `POST /simulate` takes a G-code program (`{"gcode": "..."}`). They no longer accept filesystem paths, so the path-allow-list policy and its `FIBERPATH_API_ALLOWED_ROOTS` setting are gone. `POST /plan` now returns the generated program directly in the `gcode` field instead of writing a `.gcode` file and returning its path. This makes the service stateless and safe to run as a local sidecar.
+
+### Added
+
+- `POST /plot` renders an unwrapped 2D preview of a G-code program (`{"gcode": "..."}`) and returns `image/png` bytes.
+
+### Removed
+
+- The API streaming route (`POST /stream/`) has been removed; driving a Marlin controller is being reworked into a dedicated REST surface (see issues #190 and #199).
+
 ## [0.7.4] - 2026-06-25
 
 ### Fixed

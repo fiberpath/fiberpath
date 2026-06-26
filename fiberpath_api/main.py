@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fiberpath.planning import PlanningError
 from fiberpath.simulation import SimulationError
+from fiberpath.visualization import PlotError
 
-from .routes import plan, simulate, stream, validate
+from .routes import plan, plot, simulate, validate
 
 
 def _bad_request(request: Request, exc: Exception) -> JSONResponse:
@@ -22,12 +23,13 @@ def create_app() -> FastAPI:
     application.include_router(plan.router, prefix="/plan", tags=["planning"])
     application.include_router(simulate.router, prefix="/simulate", tags=["simulation"])
     application.include_router(validate.router, prefix="/validate", tags=["validation"])
-    application.include_router(stream.router, prefix="/stream", tags=["stream"])
+    application.include_router(plot.router, prefix="/plot", tags=["plot"])
 
     # Map core-engine input errors to 4xx instead of letting them surface as 500s.
     # PlanningError covers its subclass LayerValidationError via isinstance dispatch.
     application.add_exception_handler(PlanningError, _bad_request)
     application.add_exception_handler(SimulationError, _bad_request)
+    application.add_exception_handler(PlotError, _bad_request)
     return application
 
 

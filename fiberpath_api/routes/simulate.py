@@ -1,29 +1,20 @@
-"""Simulation endpoints."""
+"""Simulation endpoint."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from fiberpath.simulation import simulate_program
 
-from ..path_policy import enforce_input_path_policy
-from ..schemas import FilePathRequest, SimulationResponse
+from ..schemas import GcodeRequest, SimulationResponse
 
 router = APIRouter()
 
 
-@router.post("/from-file", response_model=SimulationResponse)
-def simulate_from_file(payload: FilePathRequest) -> SimulationResponse:
-    target = enforce_input_path_policy(payload.path)
-    if not target.exists():
-        raise HTTPException(status_code=404, detail=f"No file found at {payload.path}")
-    if not target.is_file():
-        raise HTTPException(status_code=400, detail=f"Not a file: {payload.path}")
-    try:
-        commands = target.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Could not read {payload.path}: {exc}"
-        ) from exc
+@router.post("", response_model=SimulationResponse)
+def simulate(payload: GcodeRequest) -> SimulationResponse:
+    commands = payload.gcode.splitlines()
+    if not any(line.strip() for line in commands):
+        raise HTTPException(status_code=400, detail="gcode contained no commands")
     result = simulate_program(commands)
     return SimulationResponse(
         commands=result.commands_executed,

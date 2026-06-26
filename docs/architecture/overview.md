@@ -37,7 +37,7 @@ together and where to extend them.
 | `fiberpath.planning`   | Parses `.wind` files, validates machine/layer constraints, produces command sequences. | `PlanOptions` governs verbosity and optional advanced dialect override.                          |
 | `fiberpath.gcode`      | Dialects and writers for Marlin-style controllers.                                     | Extend here when adding custom headers or commands. Axis mapping configured via `MarlinDialect`. |
 | `fiberpath.simulation` | Time/distance estimations based on planned feed rates.                                 | Feeds CLI `simulate` summaries. Axis-aware for proper rotational calculations.                   |
-| `fiberpath.execution`  | PySerial streaming, pause/resume, and progress tracking.                               | Used by CLI streaming and API `/stream`.                                                         |
+| `fiberpath.execution`  | PySerial streaming, pause/resume, and progress tracking.                               | Used by CLI streaming. (The API serial surface is being reworked under the Marlin REST track.)   |
 
 ## Axis Mapping System
 
