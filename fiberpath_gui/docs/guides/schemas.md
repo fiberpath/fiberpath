@@ -7,30 +7,33 @@ Complete guide to Zod runtime validation in FiberPath GUI.
 FiberPath GUI uses **Zod** for runtime validation of:
 
 - User input from forms
-- CLI responses from Tauri commands
-- .wind file structure
-- Configuration data
+- `.wind` file structure (hand-editable, loaded from disk)
+- Responses from the **remaining Tauri commands** (`stream_program`,
+  `check_cli_health`)
+
+**Not** validated with Zod: **compute responses** (`/plan`, `/validate`, `/plot`).
+Those come from the API sidecar through the OpenAPI-generated `openapi-fetch`
+client (`src/api/`), so their types are generated from the spec and checked by a
+CI drift gate — runtime Zod schemas would just duplicate them. See
+[Backend Integration](../architecture/cli-integration.md).
 
 **Why Runtime Validation?**
 
 - TypeScript only validates at compile time
-- CLI responses are unknown at compile time
+- Tauri command responses are `unknown` at compile time
 - User can provide invalid data
-- .wind files can be hand-edited
+- `.wind` files can be hand-edited
 
 ## Schema Organization
 
 ### File Structure (`src/lib/schemas.ts`)
 
 ```typescript
-// Tauri Command Response Schemas
-export const PlanSummarySchema = z.object({
+// Tauri Command Response Schemas (the commands the shell still owns)
+export const StreamSummarySchema = z.object({
   /* ... */
 });
-export const SimulationSummarySchema = z.object({
-  /* ... */
-});
-export const PlotPreviewPayloadSchema = z.object({
+export const CliHealthResponseSchema = z.object({
   /* ... */
 });
 // Wind File Structure Schemas (camelCase for backend)
@@ -46,9 +49,12 @@ export const WindHoopLayerSchema = z.object({
 export const WindHelicalLayerSchema = z.object({
   /* ... */
 });
+export const WindDefinitionSchema = z.object({
+  /* ... whole .wind file ... */
+});
 // TypeScript Types (inferred from schemas)
-export type PlanSummary = z.infer<typeof PlanSummarySchema>;
-export type MandrelParameters = z.infer<typeof MandrelParametersSchema>;
+export type StreamSummary = z.infer<typeof StreamSummarySchema>;
+export type WindDefinition = z.infer<typeof WindDefinitionSchema>;
 ```
 
 **Convention:** Schema name = Type name + "Schema" suffix.
@@ -73,13 +79,17 @@ export type MandrelParameters = z.infer<typeof MandrelParametersSchema>;
 ### Optional Fields
 
 ```typescript
-export const PlanSummarySchema = z.object({
+export const ExampleSummarySchema = z.object({
   output: z.string(),
   commands: z.number().int().nonnegative(),
-  layers: z.number().int().nonnegative().optional(), // Can be undefined
-  metadata: z.record(z.unknown()).optional(), // Can be undefined
+  layers: z.number().int().nonnegative().optional(), // Can be missing
+  metadata: z.record(z.unknown()).optional(), // Can be missing
 });
 ```
+
+> `.optional()` (field may be **absent**) differs from `.nullable()` (field is
+> present but may be `null`). `CliHealthResponseSchema`, for instance, uses
+> `.nullable()` for `version`/`errorMessage` — they are always present.
 
 **Behavior:** Optional fields can be missing from input.
 
@@ -120,8 +130,13 @@ if (layer.windType === "hoop") {
 ### Arrays
 
 ```typescript
-export const FiberPathProjectSchema = z.object({
-  schemaVersion: z.literal("1.0"),
+export const WindDefinitionSchema = z.object({
+  // Any 1.x minor is accepted (additive evolution); absent is treated as 1.0.
+  // An incompatible major (2.0+) is rejected. See #140.
+  schemaVersion: z
+    .string()
+    .regex(/^1\.\d+$/)
+    .optional(),
   mandrelParameters: MandrelParametersSchema,
   towParameters: TowParametersSchema,
   defaultFeedRate: z.number().positive(),
@@ -226,18 +241,23 @@ export function validateData<T>(
   return result.data;
 }
 // Usage
-const summary = validateData(PlanSummarySchema, response, "plan_wind response");
+const summary = validateData(StreamSummarySchema, response, "stream_program response");
 ```
 
 ## Common Patterns
 
-### Validating CLI Responses
+### Validating Tauri Command Responses
+
+The Tauri commands the shell still owns return `unknown`, so validate them:
 
 ```typescript
-export const planWind = async (inputPath: string): Promise<PlanSummary> => {
-  const result = await invoke("plan_wind", { inputPath });
-  return validateData(PlanSummarySchema, result, "plan_wind response");
-};
+export async function streamProgram(
+  gcodePath: string,
+  options: { port?: string; baudRate: number; dryRun: boolean },
+): Promise<StreamSummary> {
+  const result = await invoke("stream_program", { gcodePath, ...options });
+  return validateData(StreamSummarySchema, result, "stream_program response");
+}
 ```
 
 **Flow:**
@@ -245,6 +265,10 @@ export const planWind = async (inputPath: string): Promise<PlanSummary> => {
 1. Call Tauri command (returns `unknown`)
 2. Validate with schema
 3. Return typed data or throw `ValidationError`
+
+> Compute calls (`/plan`, `/validate`, `/plot`) skip this step — the
+> `openapi-fetch` client already returns typed `response.data`, so there is no
+> `unknown` to narrow. See [Backend Integration](../architecture/cli-integration.md).
 
 ### Validating User Input
 
@@ -458,7 +482,7 @@ describe("WindLayerSchema", () => {
 
 ### ✅ Do
 
-- **Validate at boundaries:** CLI responses, user input, file loads
+- **Validate at boundaries:** Tauri command responses, user input, file loads
 - **Use discriminated unions:** For layer types, state variants
 - **Write tests:** For every schema (valid + invalid cases)
 - **Provide custom messages:** For better UX

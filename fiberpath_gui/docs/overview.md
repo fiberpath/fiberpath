@@ -51,22 +51,27 @@ Direct hardware control for Marlin-compatible machines:
 ┌──────────────────┐
 │  React Frontend  │  TypeScript + Vite
 │  (UI Panels)     │  Zustand state management
-└────────┬─────────┘
-         │ invoke()
-         ▼
-┌──────────────────┐
-│  Tauri Commands  │  Rust async bridge
-│  (IPC Layer)     │  Process execution
-└────────┬─────────┘
-         │ spawn
-         ▼
-┌──────────────────┐
-│  FiberPath CLI   │  Python backend
-│  plan/plot/sim   │  Core algorithms
-└──────────────────┘
+└───┬──────────┬───┘
+    │ HTTP     │ invoke()
+    ▼          ▼
+┌─────────┐  ┌──────────────────┐
+│ FastAPI │  │  Tauri Commands  │  Rust native host
+│ sidecar │  │  (IPC Layer)     │  files + Marlin serial
+│ plan/   │  └────────┬─────────┘  + sidecar supervision
+│ validate│           │ spawn
+│ /plot   │           ▼
+└─────────┘  ┌──────────────────┐
+   ▲         │  FiberPath CLI   │  Marlin streaming
+   │ supervised by the shell    │  (serial path)
+   └─────────└──────────────────┘
+   both freeze from the same Python package
 ```
 
-The GUI acts as a shell around the FiberPath CLI, providing visual workflows while delegating all planning, simulation, and G-code generation to the battle-tested Python backend.
+Compute (planning, validation, plotting) goes to a **local FastAPI sidecar** over
+HTTP through an OpenAPI-typed client; the Tauri shell is a thin native host that
+owns the window, file I/O, the Marlin serial path, and supervising the sidecar.
+Either way, all the heavy lifting stays in the battle-tested Python backend. See
+[Backend Integration](architecture/cli-integration.md).
 
 ## Technology Stack
 
@@ -156,10 +161,15 @@ fiberpath_gui/
 │   └── tests/            # Test files
 ├── src-tauri/
 │   ├── src/
-│   │   ├── main.rs       # Tauri commands and CLI bridge
-│   │   └── marlin.rs     # Streaming state management
+│   │   ├── main.rs        # Tauri commands (files, health, Marlin) + setup
+│   │   ├── api_sidecar.rs # Spawn/supervise the FastAPI sidecar
+│   │   ├── api_path.rs    # Resolve the bundled fiberpath-api binary
+│   │   ├── cli_path.rs    # Resolve the bundled fiberpath CLI binary
+│   │   └── marlin.rs      # Streaming state management
 │   ├── Cargo.toml
 │   └── tauri.conf.json
+├── bundled-cli/          # Frozen fiberpath CLI (CI artifact; git-ignored)
+├── bundled-api/          # Frozen fiberpath-api sidecar (CI artifact; git-ignored)
 ├── schemas/              # JSON schemas
 ├── docs/                 # This documentation
 └── package.json

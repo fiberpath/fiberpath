@@ -1,670 +1,265 @@
-# CLI Integration Architecture
+# Backend Integration Architecture
 
-How FiberPath GUI bridges to the Python CLI backend via Tauri commands.
+How FiberPath GUI bridges to its Python backends. There are **two** backends, and
+the GUI talks to each differently:
+
+- **Compute** (plan / validate / plot) goes to a **local FastAPI sidecar** over
+  HTTP, through a generated, OpenAPI-typed client.
+- **Native host duties** (file I/O, driving Marlin hardware over serial) stay as
+  **Tauri commands** invoked over the IPC bridge.
+
+The Tauri shell is a thin native host: it owns the window, reads/writes files,
+**supervises the sidecar process**, and runs the Marlin serial path. It no longer
+performs compute itself.
+
+> History: before v0.7 the shell shelled out to the `fiberpath` CLI for compute
+> (`plan_wind`, `simulate_program`, `plot_preview`) and round-tripped results
+> through temp files. Those commands were removed once the sidecar landed
+> (#192/#193/#194). Compute now never touches the filesystem.
 
 ## Architecture Overview
 
 ```text
 ┌─────────────────────────────────────┐
 │  React Components                   │  User interactions
-│  (PlanForm, PlotPanel, etc.)        │
+│  (PlanForm, PlotPanel, Stream tab)  │
 └─────────────┬───────────────────────┘
               │ TypeScript functions
               ▼
 ┌─────────────────────────────────────┐
-│  Command Layer (commands.ts)        │  Type-safe wrappers
-│  - planWind()                       │  - Retry logic
-│  - simulateProgram()                │  - Error handling
-│  - plotPreview()                    │  - Zod validation
-└─────────────┬───────────────────────┘
-              │ invoke()
-              ▼
-┌─────────────────────────────────────┐
-│  Tauri IPC Bridge                   │  Async serialization
-│  (invoke_handler)                   │
-└─────────────┬───────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────┐
-│  Rust Commands (main.rs)            │  Process spawning
-│  #[tauri::command]                  │  - File I/O
-│  - plan_wind                        │  - JSON parsing
-│  - simulate_program                 │  - Error mapping
-│  - plot_preview                     │
-└─────────────┬───────────────────────┘
-              │ CLI Discovery
-              ▼
-┌─────────────────────────────────────┐
-│  CLI Path Resolution (cli_path.rs)  │  Bundled vs System
-│  - Check bundled CLI first          │  - Platform paths
-│  - Fallback to system PATH          │  - Error handling
-│  - Resource directory lookup        │
-└─────────────┬───────────────────────┘
-              │ std::process::Command
-              ▼
-┌─────────────────────────────────────┐
-│  FiberPath CLI (Python)             │  Core algorithms
-│  $ fiberpath plan input.wind        │
-│  $ fiberpath simulate out.gcode     │
-│  $ fiberpath plot out.gcode         │
-└─────────────────────────────────────┘
+│  Command Layer (lib/commands.ts)    │  Type-safe wrappers + retry
+└──────┬───────────────────────┬──────┘
+       │ compute               │ files / hardware
+       ▼                       ▼
+┌──────────────────┐   ┌──────────────────────┐
+│ API client       │   │ Tauri IPC (invoke)   │
+│ (lib/apiClient)  │   │ - save/load_wind_file│
+│ openapi-fetch    │   │ - stream_program     │
+└──────┬───────────┘   │ - marlin::*          │
+       │ HTTP          │ - check_cli_health   │
+       │ 127.0.0.1     └──────────┬───────────┘
+       ▼                          │ std::process::Command
+┌──────────────────┐              ▼
+│ FastAPI sidecar  │   ┌──────────────────────┐
+│ (fiberpath-api)  │   │ FiberPath CLI        │
+│ POST /plan       │   │ $ fiberpath stream   │
+│ POST /validate   │   │   (Marlin serial)    │
+│ POST /plot       │   └──────────────────────┘
+└──────────────────┘
+   both freeze from the same `fiberpath` Python package
 ```
 
-## CLI Discovery & Bundling
+## Compute path: the API sidecar
 
-**As of v0.5.1,** the GUI embeds a frozen CLI executable inside production installers. This eliminates the Python dependency for end users.
+### Why a sidecar instead of CLI calls
 
-### Discovery Logic (`src-tauri/src/cli_path.rs`)
+| CLI-subprocess (old)                        | HTTP sidecar (now)                          |
+| ------------------------------------------- | ------------------------------------------- |
+| One process spawn per operation             | One long-lived process, many requests       |
+| Results passed through temp files on disk   | Stateless request/response, nothing on disk |
+| Hand-written response types, Zod-validated  | Types generated from the OpenAPI spec       |
+| GUI re-implements arg/flag wiring per call  | One typed client method per route           |
 
-```rust
-pub fn get_fiberpath_executable(app: &AppHandle) -> Result<PathBuf, String> {
-    // 1. Try bundled CLI first (production mode)
-    match get_bundled_cli_path(app) {
-        Ok(bundled_path) => {
-            if bundled_path.exists() && bundled_path.is_file() {
-                log::info!("Using bundled CLI: {:?}", bundled_path);
-                return Ok(bundled_path);
-            }
-        }
-        Err(e) => log::warn!("Failed to resolve bundled CLI path: {}", e),
-    }
-    // 2. Fallback to system PATH (development mode)
-    if let Ok(system_path) = which::which("fiberpath") {
-        log::info!("Using system CLI: {:?}", system_path);
-        return Ok(system_path);
-    }
-    // 3. Error if neither found
-    Err(
-        "FiberPath CLI not found. Please install: pip install fiberpath"
-            .to_string(),
-    )
-}
-fn get_bundled_cli_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to get resource directory: {}", e))?;
-    let cli_name = if cfg!(windows) {
-        "fiberpath.exe"
-    } else {
-        "fiberpath"
-    };
-    // Platform-specific paths
-    let bundled_path = if cfg!(windows) {
-        // Windows uses _up_/ subdirectory for installed apps
-        resource_dir.join("_up_").join("bundled-cli").join(cli_name)
-    } else {
-        resource_dir.join("bundled-cli").join(cli_name)
-    };
-    Ok(bundled_path)
-}
+The same compute engine is reused by the CLI and the API — they freeze from the
+one `fiberpath` Python package — but the GUI now speaks to it as a service.
+
+### Supervision (`src-tauri/src/api_sidecar.rs`)
+
+The Rust shell spawns and owns the sidecar process. The sidecar binds an
+**ephemeral `127.0.0.1` port** (loopback only — never network-exposed) and prints
+a one-line JSON handshake to stdout so the shell learns the port:
+
+```json
+{"event":"listening","host":"127.0.0.1","port":54321}
 ```
 
-**Why Two-Stage Discovery:**
+Lifecycle:
 
-1. **Production users:** Zero Python setup—bundled CLI "just works"
-2. **Contributors:** No PyInstaller needed—develop with `pip install -e .`
-3. **CI/CD:** Works in both modes automatically
+1. **Spawn** the frozen `fiberpath-api` (or the `fiberpath-api` console script in
+   dev) with piped stdio.
+2. **Read the handshake** — the first stdout line yields the base URL
+   `http://127.0.0.1:<port>`. If the process exits first (EOF), that surfaces as
+   `NoHandshake`.
+3. **Drain pipes** on background threads so a full pipe never blocks the child;
+   stderr (uvicorn logs) is forwarded to `log::debug!("[api-sidecar] …")`.
+4. **Respawn on death** — `base_url()` checks `try_wait()` and starts a fresh
+   sidecar if the previous one died.
+5. **Reap on Drop** — the child is killed and waited on app exit so it never
+   lingers as an orphan holding its port.
 
-### Platform-Specific Paths
+The shell warms the sidecar in a background thread at startup (`setup` hook), so
+the first compute call is fast; failures there are non-fatal because
+`api_base_url` spawns lazily on demand. The frontend reaches the URL through the
+`api_base_url` Tauri command.
 
-| Mode              | Platform | CLI Path                                        |
-| ----------------- | -------- | ----------------------------------------------- |
-| **Installed**     | Windows  | `resources\_up_\bundled-cli\fiberpath.exe`      |
-| **Dev (unbuilt)** | Windows  | `resources\bundled-cli\fiberpath.exe`           |
-| **Installed**     | macOS    | `.app/Contents/Resources/bundled-cli/fiberpath` |
-| **Installed**     | Linux    | `resources/bundled-cli/fiberpath`               |
-| **Fallback**      | All      | Resolved via `which fiberpath` (system PATH)    |
+### The typed client (`src/lib/apiClient.ts`)
 
-**Key Tauri APIs:**
+`getApiClient()` is the single entry point. On first use it:
 
-- `app.path().resource_dir()`: Returns resource directory (`AppHandle`)
-- `_up_/` subdirectory: Windows-specific workaround for NSIS installer path resolution
-- `which::which()`: Cross-platform PATH search (crate)
+1. invokes `api_base_url` to get (and, if needed, start) the sidecar URL,
+2. polls `GET /health` until the server answers (`waitForHealth`, 30 s budget),
+3. builds an [`openapi-fetch`](https://github.com/openapi-ts/openapi-typescript)
+   client over the generated types in `src/api/`.
 
-### CLI Freezing Process
+The client promise is memoised; a failed start clears the memo so the next call
+retries (`resetApiClient()` forces a fresh client, e.g. in tests).
 
-The bundled CLI is created via PyInstaller during CI/CD:
-
-**1. Freeze Script (`scripts/freeze_cli.py`):**
-
-```python
-PyInstaller.__main__.run([
-    '--onefile',
-    '--name', 'fiberpath',
-    '--console',  # Windows: CREATE_NO_WINDOW flag set
-    '--collect-all', 'fiberpath',
-    '--collect-all', 'fiberpath_cli',
-    # ... more --collect-all flags
-    'fiberpath_cli/main.py',
-])
+```typescript
+const client = await getApiClient();
+const response = await client.POST("/plan", { body: definition });
+if (response.error || !response.data) throw new CommandError(/* … */);
+const { gcode, commandCount } = response.data;
 ```
 
-**2. CI Workflow (`.github/workflows/release.yml`):**
+Request/response shapes are **generated**, not hand-written: `client.POST("/plan", …)`
+knows the body and response types from the OpenAPI spec. A CI drift gate
+regenerates the spec and client and fails if either is out of date (see #191).
 
-```yaml
-freeze-cli:
-  runs-on: windows-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Freeze CLI
-      run: uv run python scripts/freeze_cli.py
-    - name: Upload artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: frozen-cli-windows
-        path: dist/fiberpath.exe
-package-gui-windows:
-  needs: freeze-cli
-  steps:
-    - name: Download frozen CLI
-      uses: actions/download-artifact@v4
-      with:
-        name: frozen-cli-windows
-        path: fiberpath_gui/bundled-cli/
-    - name: Build Tauri
-      run: npm run tauri build
-```
+> **CORS:** the webview fetches the sidecar cross-origin (its `tauri://` origin →
+> `127.0.0.1:<port>`), so the sidecar enables permissive CORS. It binds loopback
+> only, so allowing any origin is safe. Without it the webview can't read
+> responses ("TypeError: Load failed").
 
-**3. Result:**
+### Command wrappers (`src/lib/commands.ts`)
 
-- **42 MB** self-contained executable
-- Full Python interpreter + dependencies embedded
-- No DLL hell, no registry dependencies
-- Entry point: `fiberpath_cli.main:app` (Typer CLI)
+The compute wrappers translate between the UI and the API:
 
-## Frontend Layer
+| Wrapper                   | API calls                                  | Notes                                                         |
+| ------------------------- | ------------------------------------------ | ------------------------------------------------------------ |
+| `planWind`                | `POST /plan` → `saveWindFile`              | API returns `gcode` in the body; the shell writes it to disk |
+| `plotDefinition`          | `POST /plan` then `POST /plot`             | `/plot` returns a PNG arrayBuffer, encoded to base64 for `<img>` |
+| `validateWindDefinition`  | `POST /validate`                           | 400/422 is a normal "invalid" outcome, not a thrown error    |
 
-### Command Wrappers (`src/lib/commands.ts`)
+Because the API is body-only and stateless, `planWind` plans in memory and then
+persists the returned G-code through the file-system bridge — the backend never
+writes files itself.
+
+## Native path: Tauri commands
+
+These stay in the Rust shell because they need OS access the sidecar shouldn't have.
+
+| Command                                  | Purpose                                            |
+| ---------------------------------------- | -------------------------------------------------- |
+| `save_wind_file` / `load_wind_file`      | Read/write `.wind` (and `.gcode`) files            |
+| `stream_program`                         | Stream G-code to a Marlin board (shells out to the CLI's `stream` subcommand) |
+| `marlin::*`                              | Interactive Marlin control (connect, send, pause…) |
+| `check_cli_health` / `get_cli_diagnostics` | Verify the bundled CLI is runnable                 |
+
+`stream_program` and the `exec_fiberpath`/`parse_json_payload` helpers remain
+only for the Marlin serial path; its REST surface lands with #190/#199, after
+which more of this moves to the sidecar too.
+
+### Frontend wrappers and retry
+
+Compute and file wrappers are decorated with `withRetry` for transient failures
+(file locks, a sidecar still warming up):
 
 ```typescript
 export const planWind = withRetry(
-  async (
-    inputPath: string,
-    outputPath?: string
-  ): Promise<PlanSummary> => {
-    try {
-      const result = await invoke("plan_wind", {
-        inputPath,
-        outputPath,
-      });
-      return validateData(PlanSummarySchema, result, "plan_wind response");
-    } catch (error) {
-      throw new CommandError(
-        "Failed to plan wind definition",
-        "plan_wind",
-        error
-      );
+  async (definitionJson: string, outputPath: string): Promise<PlanSummary> => {
+    const client = await getApiClient();
+    const response = await client.POST("/plan", { body: JSON.parse(definitionJson) });
+    if (response.error || !response.data) {
+      throw new CommandError("Failed to plan wind definition", "plan", response.error);
     }
+    await saveWindFile(outputPath, response.data.gcode);
+    return { output: outputPath, commands: response.data.commandCount };
   },
-  { maxAttempts: 2 }
+  { maxAttempts: 2 },
 );
 ```
 
-**Features:**
+Errors are wrapped in typed classes (`src/lib/schemas.ts`): `CommandError`,
+`ValidationError`, `FileError`, `ConnectionError` — all extending `FiberPathError`.
 
-- **Type Safety:** Returns typed `PlanSummary` not `unknown`
-- **Validation:** Zod schema validates CLI response structure
-- **Retry Logic:** Automatic retry on transient failures
-- **Error Wrapping:** Converts raw errors to `CommandError`
+## Bundling & discovery
 
-### Retry Logic (`src/lib/retry.ts`)
+Both binaries are frozen with PyInstaller `--onefile` from the same Python package
+and bundled into the installer:
 
-```typescript
-export function withRetry<T, Args extends any[]>(
-  fn: (...args: Args) => Promise<T>,
-  options: RetryOptions = {}
-): (...args: Args) => Promise<T> {
-  const { maxAttempts = 3, delayMs = 1000 } = options;
-  return async (...args: Args): Promise<T> => {
-    let lastError: Error | null = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await fn(...args);
-      } catch (error) {
-        lastError = error;
-        if (attempt < maxAttempts) {
-          await delay(delayMs);
-        }
-      }
-    }
-    throw lastError;
-  };
-}
-```
+- `scripts/freeze_cli.py` → `fiberpath` (Typer CLI)
+- `scripts/freeze_api.py` → `fiberpath-api` (uvicorn + FastAPI app)
 
-**Configuration:**
+In CI the freeze jobs run per-platform and their artifacts are dropped into
+`fiberpath_gui/bundled-cli/` and `fiberpath_gui/bundled-api/` before
+`tauri build`. (Those directories are git-ignored apart from a `.gitkeep`; the
+binaries are build artifacts, never committed.)
 
-- `maxAttempts`: 2-3 for most commands (default 3)
-- `delayMs`: 1000ms between attempts
-- **Use Cases:** Network timeouts, file locks, temporary I/O errors
+### Path resolution (`cli_path.rs`, `api_path.rs`)
 
-### Error Classes (`src/lib/validation.ts`)
+Each resolver checks the bundled binary first, then falls back to the system
+`PATH` (dev installs that `pip install -e .`).
 
-```typescript
-export class CommandError extends Error {
-  constructor(
-    message: string,
-    public command: string,
-    public cause?: unknown
-  ) {
-    super(message);
-    this.name = "CommandError";
-  }
-}
-export class ValidationError extends Error {
-  constructor(
-    message: string,
-    public errors: Array<{ field: string; message: string }>
-  ) {
-    super(message);
-    this.name = "ValidationError";
-  }
-}
-export class FileError extends Error {
-  constructor(
-    message: string,
-    public filePath: string,
-    public cause?: unknown
-  ) {
-    super(message);
-    this.name = "FileError";
-  }
-}
-export class ConnectionError extends Error {
-  constructor(
-    message: string,
-    public port: string,
-    public cause?: unknown
-  ) {
-    super(message);
-    this.name = "ConnectionError";
-  }
-}
-```
-
-**Usage:**
-
-```typescript
-try {
-  await planWind(inputPath);
-} catch (error) {
-  if (error instanceof CommandError) {
-    console.error(`Command ${error.command} failed: ${error.message}`);
-  } else if (error instanceof ValidationError) {
-    error.errors.forEach((e) => console.error(`${e.field}: ${e.message}`));
-  }
-}
-```
-
-## Rust Backend Layer
-
-### Command Definitions (`src-tauri/src/main.rs`)
-
-#### Plan Command
+Resources bundled from the `../bundled-cli/*` / `../bundled-api/*` globs land
+under a **`_up_/` subdirectory on every platform** (Tauri encodes the parent-dir
+`../`). So resolution prefers `…/_up_/bundled-cli/<exe>` and falls back to a flat
+`…/bundled-cli/<exe>` (dev builds):
 
 ```rust
-#[tauri::command]
-async fn plan_wind(
-    input_path: String,
-    output_path: Option<String>,
-) -> Result<Value, String> {
-    let output_file = output_path.unwrap_or_else(|| temp_path("gcode"));
-    let mut args = vec![
-        "plan".to_string(),
-        input_path,
-        "--output".into(),
-        output_file.clone(),
-        "--json".into(),
-    ];
-    let output = exec_fiberpath(args).await.map_err(|err| err.to_string())?;
-    parse_json_payload(output).map(|mut payload| {
-        if let Value::Object(ref mut obj) = payload {
-            obj.insert("output".to_string(), Value::String(output_file));
-        }
-        payload
-    })
-}
+let up_layout = resource_dir.join("_up_").join("bundled-cli").join(exe_name);
+let cli_path = if up_layout.exists() {
+    up_layout
+} else {
+    resource_dir.join("bundled-cli").join(exe_name)
+};
 ```
 
-**Flow:**
+| Mode          | Platform | Resolved path                                          |
+| ------------- | -------- | ------------------------------------------------------ |
+| **Installed** | all      | `…/resources/_up_/bundled-{cli,api}/<exe>`             |
+| **Dev build** | all      | `…/resources/bundled-{cli,api}/<exe>`                  |
+| **Fallback**  | all      | `which fiberpath` / `which fiberpath-api` (system PATH) |
 
-1. Accept input path and optional output path
-2. Generate temp file if output not specified
-3. Build CLI args with `--json` flag
-4. Execute `fiberpath plan ...`
-5. Parse JSON response
-6. Inject output path into response
-
-#### Simulate Command
-
-```rust
-#[tauri::command]
-async fn simulate_program(gcode_path: String) -> Result<Value, String> {
-    let args = vec!["simulate".into(), gcode_path, "--json".into()];
-    let output = exec_fiberpath(args).await.map_err(|err| err.to_string())?;
-    parse_json_payload(output)
-}
-```
-
-**Simpler:** No temp files, just execute and parse.
-
-#### Plot Command
-
-```rust
-#[tauri::command]
-async fn plot_preview(
-    gcode_path: String,
-    scale: f64,
-    output_path: Option<String>,
-) -> Result<PlotPreview, String> {
-    let output_file = output_path.unwrap_or_else(|| temp_path("png"));
-    let args = vec![
-        "plot".into(),
-        gcode_path,
-        "--output".into(),
-        output_file.clone(),
-        "--scale".into(),
-        scale.to_string(),
-    ];
-    exec_fiberpath(args).await.map_err(|err| err.to_string())?;
-    // Read PNG and encode as base64
-    let bytes = fs::read(&output_file)
-        .map_err(|err| FiberpathError::File(err.to_string()).to_string())?;
-    Ok(PlotPreview {
-        path: output_file,
-        image_base64: Base64.encode(bytes),
-        warnings: vec![],
-    })
-}
-```
-
-**Special:** Returns base64-encoded image for embedding in React.
-
-### Process Execution (`exec_fiberpath`)
-
-```rust
-async fn exec_fiberpath(args: Vec<String>) -> Result<Output, FiberpathError> {
-    let output = std::process::Command::new("fiberpath")
-        .args(&args)
-        .output()
-        .map_err(|e| FiberpathError::Process(e.to_string()))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(FiberpathError::Process(stderr.to_string()));
-    }
-    Ok(output)
-}
-```
-
-**Error Handling:**
-
-- Checks exit code
-- Captures stderr on failure
-- Returns typed error
-
-### JSON Parsing (`parse_json_payload`)
-
-```rust
-fn parse_json_payload(output: Output) -> Result<Value, String> {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).map_err(|e| e.to_string())
-}
-```
-
-**Assumption:** CLI outputs valid JSON to stdout when `--json` flag present.
-
-### Temporary Files
-
-```rust
-fn temp_path(extension: &str) -> String {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let temp_dir = std::env::temp_dir();
-    temp_dir
-        .join(format!("fiberpath-{}.{}", timestamp, extension))
-        .to_string_lossy()
-        .to_string()
-}
-```
-
-**Pattern:** Timestamp-based names prevent collisions.
-
-## Data Flow Examples
-
-### Planning Workflow
-
-```text
-1. User clicks "Generate G-code" in PlanForm
-   ↓
-2. Component calls planWind(inputPath, outputPath)
-   ↓
-3. Command wrapper invokes Tauri command
-   ↓
-4. Rust plan_wind() spawns: fiberpath plan input.wind --output out.gcode --json
-   ↓
-5. Python CLI reads input.wind, generates G-code, writes out.gcode
-   ↓
-6. Python prints JSON summary to stdout: {"commands": 1234, "duration": 56.7, ...}
-   ↓
-7. Rust parses JSON, returns to frontend
-   ↓
-8. Frontend validates with PlanSummarySchema
-   ↓
-9. Component updates UI with plan metrics
-```
-
-### Plotting Workflow
-
-```text
-1. User clicks "Preview" in PlotPanel
-   ↓
-2. Component calls plotPreview(gcodePath, scale)
-   ↓
-3. Rust plot_preview() spawns: fiberpath plot out.gcode --output preview.png --scale 2.0
-   ↓
-4. Python CLI reads G-code, generates PNG plot
-   ↓
-5. Rust reads PNG bytes, encodes as base64
-   ↓
-6. Frontend receives {path: "...", imageBase64: "iVBORw0KG...", warnings: []}
-   ↓
-7. Component renders <img src={`data:image/png;base64,${imageBase64}`} />
-```
-
-### Simulation Workflow
-
-```text
-1. User clicks "Simulate" in SimulatePanel
-   ↓
-2. Component calls simulateProgram(gcodePath)
-   ↓
-3. Rust simulate_program() spawns: fiberpath simulate out.gcode --json
-   ↓
-4. Python CLI parses G-code, simulates motion
-   ↓
-5. Python prints JSON: {"total_time": 3456.7, "total_distance": 12345.6, ...}
-   ↓
-6. Rust parses and returns JSON
-   ↓
-7. Frontend validates and displays metrics
-```
-
-## Health Checking
-
-### CLI Availability
-
-```typescript
-export async function checkCliVersion(): Promise<string> {
-  try {
-    const output = await invoke<string>("check_cli_version");
-    return output.trim();
-  } catch (error) {
-    throw new CommandError(
-      "FiberPath CLI not found or not in PATH",
-      "check_cli_version",
-      error
-    );
-  }
-}
-```
-
-```rust
-#[tauri::command]
-async fn check_cli_version() -> Result<String, String> {
-    let output = std::process::Command::new("fiberpath")
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("CLI not found: {}", e))?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-```
-
-**Usage:** Call on app startup to verify CLI installation.
-
-### Error Recovery
-
-```typescript
-try {
-  const summary = await planWind(inputPath);
-} catch (error) {
-  if (error instanceof CommandError && error.cause?.includes("not found")) {
-    showInstallInstructions();
-  } else {
-    showGenericError(error.message);
-  }
-}
-```
-
-## Performance Considerations
-
-### Async Execution
-
-All commands are `async fn` in Rust, preventing UI blocking:
-
-```rust
-#[tauri::command]
-async fn plan_wind(...) -> Result<...> {
-    // Runs on background thread pool
-    exec_fiberpath(args).await
-}
-```
-
-**Benefit:** UI remains responsive during CLI execution.
-
-### Temporary File Cleanup
-
-**Manual cleanup needed:**
-
-```typescript
-try {
-  const result = await planWind(inputPath, tempOutput);
-  // ...use result
-} finally {
-  await invoke("delete_file", { path: tempOutput });
-}
-```
-
-**Future Improvement:** Auto-cleanup via RAII or temp directory manager.
-
-### Streaming Progress
-
-For long-running operations, use event emission:
-
-```rust
-use tauri::Manager;
-#[tauri::command]
-async fn long_operation(window: tauri::Window) -> Result<(), String> {
-    for i in 0..100 {
-        window.emit("progress", i).unwrap();
-        // ...work
-    }
-    Ok(())
-}
-```
-
-```typescript
-import { listen } from "@tauri-apps/api/event";
-const unlisten = await listen<number>("progress", (event) => {
-  console.log(`Progress: ${event.payload}%`);
-});
-```
-
-**Use Case:** Large file processing, multi-file operations.
+> The earlier docs claimed `_up_/` was Windows-only. It is not — every platform
+> gets it for resources copied from a parent-relative glob. Resolving it
+> uniformly is what fixed the "backend unavailable" bug in #208.
 
 ## Testing
 
-### Mock Tauri Commands
+Compute wrappers are tested against a mocked `openapi-fetch` client; native
+wrappers mock `@tauri-apps/api/core`'s `invoke`. The sidecar supervisor has Rust
+unit tests for the handshake parser, and `scripts/ci/smoke_api_sidecar.py`
+exercises the frozen server end-to-end in CI.
 
 ```typescript
 import { vi } from "vitest";
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-it("should handle plan success", async () => {
-  vi.mocked(invoke).mockResolvedValue({
-    commands: 1234,
-    duration: 56.7,
-    output: "/tmp/out.gcode",
-  });
-  const result = await planWind("input.wind");
-  expect(result.commands).toBe(1234);
-  expect(invoke).toHaveBeenCalledWith("plan_wind", {
-    inputPath: "input.wind",
-    outputPath: undefined,
-  });
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+it("streams via the Marlin bridge", async () => {
+  vi.mocked(invoke).mockResolvedValue({ /* StreamSummary */ });
+  await streamProgram("out.gcode", { baudRate: 115200, dryRun: true });
+  expect(invoke).toHaveBeenCalledWith("stream_program", expect.objectContaining({
+    gcodePath: "out.gcode",
+  }));
 });
-```
-
-### Integration Tests
-
-Run actual CLI commands in test environment:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn test_plan_wind() {
-        let result = plan_wind(
-            "test_input.wind".into(),
-            None,
-        ).await;
-        assert!(result.is_ok());
-    }
-}
 ```
 
 ## Troubleshooting
 
-### "Command not found"
+### "API sidecar did not become healthy"
 
-**Cause:** `fiberpath` not in PATH.
+**Cause:** the sidecar never answered `GET /health` within the timeout — usually
+a frozen `fiberpath-api` that failed to start, or a missing bundled binary in dev.
 
-**Solution:** Install CLI, verify with `which fiberpath` (macOS/Linux) or `Get-Command fiberpath` (Windows).
+**Check:** look for `[api-sidecar]` lines in the logs (forwarded uvicorn stderr),
+confirm `fiberpath-api` resolves (bundled path or `which fiberpath-api`), and that
+CORS is enabled on the app.
 
-### "Permission denied"
+### "CLI Backend Unavailable"
 
-**Cause:** Serial port access (Linux).
+**Cause:** the bundled CLI (used by the Marlin/`stream_program` path and health
+checks) wasn't found.
 
-**Solution:** Add user to `dialout` group: `sudo usermod -a -G dialout $USER`
+**Check:** `get_cli_diagnostics` reports the resolved path, whether it exists, and
+the result of running `--help`. In dev, `pip install -e .` exposes `fiberpath` on
+PATH.
 
-### "Invalid JSON"
+### "Permission denied" on a serial port (Linux)
 
-**Cause:** CLI output includes non-JSON (warnings, logs).
-
-**Solution:** Ensure `--json` flag forces JSON-only output. Check CLI stderr for warnings.
-
-### Slow command execution
-
-**Cause:** Large G-code files, complex patterns.
-
-**Solution:** Add progress events, consider background processing with status updates.
+Add your user to the `dialout` group: `sudo usermod -a -G dialout $USER`.
 
 ## Next Steps
 
-- [Streaming State Management](streaming-state.md) - Real-time hardware control
-- [State Management](state-management.md) - Store → CLI data flow
-- [Schema Validation](../guides/schemas.md) - Response validation patterns
+- [Streaming State Management](streaming-state.md) — real-time Marlin control
+- [State Management](state-management.md) — store → backend data flow
+- [Schema Validation](../guides/schemas.md) — where Zod still applies
