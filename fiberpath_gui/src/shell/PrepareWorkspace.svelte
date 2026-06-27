@@ -21,12 +21,11 @@
 >
   {#if !uiState.leftCollapsed}
     <aside class="prepare__inspector prepare__inspector--left" aria-label="Project inspector">
-      <!-- Config forms (migrated #215) plus the layer list, now consolidated into
-           the left project hierarchy (was a separate bottom panel in React). Each
-           form carries its own title, so they aren't wrapped in InspectorSection. -->
-      <div class="form-block"><MandrelForm /></div>
-      <div class="form-block"><TowForm /></div>
-      <div class="form-block"><MachineSettingsForm /></div>
+      <!-- Config forms + layer list share one section-header language: every
+           group is an InspectorSection (Phase 3 unified the left rail). -->
+      <InspectorSection title="Mandrel Parameters"><MandrelForm /></InspectorSection>
+      <InspectorSection title="Tow Parameters"><TowForm /></InspectorSection>
+      <InspectorSection title="Machine Settings"><MachineSettingsForm /></InspectorSection>
 
       <InspectorSection title="Layers">
         <LayerList />
@@ -80,10 +79,6 @@
   }
   .prepare__inspector--right {
     border-left: 1px solid var(--color-border);
-  }
-  .form-block {
-    padding: var(--spacing-md);
-    border-bottom: 1px solid var(--color-border);
   }
   .prepare__viewport {
     background: var(--color-bg);

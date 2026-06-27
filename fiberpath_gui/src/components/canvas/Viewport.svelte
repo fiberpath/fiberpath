@@ -90,20 +90,11 @@
     </div>
 
     <div class="vp__content">
-      {#if previewSession.isGenerating}
-        <div class="vp__state"><span class="vp__spinner"></span> Generating preview…</div>
-      {:else if previewSession.error}
-        <div class="vp__state vp__state--error">
-          <p>{previewSession.error}</p>
-          <button class="btn btn--primary btn--small" onclick={() => previewSession.generate()}>Retry</button>
-        </div>
-      {:else if !previewSession.image}
-        <div class="vp__state">
-          <button class="btn btn--primary" onclick={() => previewSession.generate()}>Generate preview</button>
-        </div>
-      {:else}
+      {#if previewSession.image}
+        <!-- Keep the existing preview visible (dimmed) while regenerating so the
+             viewport never blanks to the void mid-refresh. -->
         <div class="vp__controls">
-          <button class="icon-btn" title="Regenerate preview" onclick={() => previewSession.generate()}>↻</button>
+          <button class="icon-btn" title="Regenerate preview" disabled={previewSession.isGenerating} onclick={() => previewSession.generate()}>↻</button>
           <span class="vp__sep"></span>
           <button class="icon-btn" title="Zoom in" onclick={() => zoomButton(1.2)}>+</button>
           <button class="icon-btn" title="Reset zoom" onclick={fit}>⟲</button>
@@ -114,6 +105,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="vp__stage"
+          class:vp__stage--busy={previewSession.isGenerating}
           bind:this={wrapperEl}
           onwheel={onWheel}
           onpointerdown={onPointerDown}
@@ -127,6 +119,20 @@
           >
             <img class="vp__image" src={previewSession.image} alt="Toolpath preview" onload={onImageLoad} draggable="false" />
           </div>
+        </div>
+        {#if previewSession.isGenerating}
+          <div class="vp__overlay"><span class="vp__spinner"></span> Regenerating…</div>
+        {/if}
+      {:else if previewSession.isGenerating}
+        <div class="vp__state"><span class="vp__spinner"></span> Generating preview…</div>
+      {:else if previewSession.error}
+        <div class="vp__state vp__state--error">
+          <p>{previewSession.error}</p>
+          <button class="btn btn--primary btn--small" onclick={() => previewSession.generate()}>Retry</button>
+        </div>
+      {:else}
+        <div class="vp__state">
+          <button class="btn btn--primary" onclick={() => previewSession.generate()}>Generate preview</button>
         </div>
       {/if}
 
@@ -223,6 +229,22 @@
   }
   .vp__stage:active {
     cursor: grabbing;
+  }
+  .vp__stage--busy {
+    opacity: 0.4;
+    transition: opacity var(--transition-fast);
+  }
+  .vp__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-controls);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    pointer-events: none;
   }
   .vp__transform {
     position: absolute;

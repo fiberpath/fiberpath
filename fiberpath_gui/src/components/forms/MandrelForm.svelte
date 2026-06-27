@@ -41,7 +41,6 @@
 </script>
 
 <div class="param-form">
-  <h3 class="param-form__title">Mandrel Parameters</h3>
 
   <NumberField
     id="mandrel-diameter"
