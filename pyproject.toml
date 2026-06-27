@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fiberpath"
-version = "0.7.4"
+version = "0.8.0"
 description = "Modern filament winding planner, simulator, and G-code toolkit."
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-26
+
 ### Changed
 
 - **The desktop GUI was rewritten from React to Svelte 5.** The frontend is now a plain Svelte 5 (runes) SPA inside the same Tauri shell — no SvelteKit — with state in `$state`/`$derived` modules (replacing Zustand and the React render-management hooks), a native pan/zoom viewport (replacing `react-zoom-pan-pinch`, which also fixes the zoom-clamped-to-image-bounds bug #147), and native drag-and-keyboard layer reordering (replacing `@hello-pangea/dnd`). Ten React-era frontend packages were removed and the production JS bundle shrank ~599 KB → ~308 KB (≈48%). The Python backend, the OpenAPI-typed client, the Tauri/Rust bridge, and the Zod validation boundary are unchanged. The UI was reorganized into **Prepare** and **Machine** workspaces with a denser desktop layout. See the [migration ADR](fiberpath_gui/docs/architecture/react-to-svelte-migration.md).

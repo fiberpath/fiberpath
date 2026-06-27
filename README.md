@@ -4,15 +4,15 @@
 
 **Plan, simulate, and manufacture composite parts with precision fiber winding.**
 
-[![Version](https://img.shields.io/badge/version-0.7.4-4c7284)](https://github.com/fiberpath/fiberpath/releases)
+[![Version](https://img.shields.io/badge/version-0.8.0-4c7284)](https://github.com/fiberpath/fiberpath/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-00695C.svg)](LICENSE)
 [![Backend CI](https://img.shields.io/github/actions/workflow/status/fiberpath/fiberpath/backend-ci.yml?branch=main&label=Backend%20CI&logo=python&logoColor=white)](https://github.com/fiberpath/fiberpath/actions/workflows/backend-ci.yml)
-[![GUI CI](https://img.shields.io/github/actions/workflow/status/fiberpath/fiberpath/gui-ci.yml?branch=main&label=GUI%20CI&logo=react&logoColor=white)](https://github.com/fiberpath/fiberpath/actions/workflows/gui-ci.yml)
+[![GUI CI](https://img.shields.io/github/actions/workflow/status/fiberpath/fiberpath/gui-ci.yml?branch=main&label=GUI%20CI&logo=svelte&logoColor=white)](https://github.com/fiberpath/fiberpath/actions/workflows/gui-ci.yml)
 [![Docs](https://img.shields.io/github/actions/workflow/status/fiberpath/fiberpath.github.io/deploy.yml?branch=main&label=Docs&logo=githubpages&logoColor=white)](https://fiberpath.org/fiberpath)
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-19+-61DAFB?logo=react&logoColor=black)
+![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)
 
 [Download](https://github.com/fiberpath/fiberpath/releases/latest) · [Documentation](https://fiberpath.org/fiberpath) · [Examples](examples/)
@@ -185,7 +185,7 @@ FiberPath consists of four coordinated components:
 
 ```text
 ┌─────────────────────────────────────────────────┐
-│              Desktop GUI (Tauri + React)        │
+│              Desktop GUI (Tauri + Svelte)       │
 │  • Visual layer editor                          │
 │  • 2D preview canvas                            │
 │  • Serial communication controls                │
@@ -270,7 +270,7 @@ npm test
 **Code standards:**
 
 - Python code follows PEP 8 (enforced by CI)
-- TypeScript/React follows project ESLint configuration
+- TypeScript/Svelte follows the project type-check and lint configuration
 - All new features require tests and documentation
 - Commit messages use conventional commits format
 

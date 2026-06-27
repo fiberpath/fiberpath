@@ -36,7 +36,7 @@ hide:
 
     ---
 
-    **Latest Release:** [v0.7.4](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
+    **Latest Release:** [v0.8.0](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
 
     - **Desktop GUI** – Windows, macOS, Linux installers (no Python required)
     - **Python Package** – `pip install fiberpath`
@@ -44,18 +44,17 @@ hide:
 
     [:octicons-arrow-right-24: Installation Guide](getting-started.md)
 
--   :material-new-box:{ .lg .middle } **What's New in v0.7.4**
+-   :material-new-box:{ .lg .middle } **What's New in v0.8.0**
 
     ---
 
-    Bug-fix release hardening input validation and the desktop integration:
+    The desktop GUI was rewritten and the compute backend became a local service:
 
-    - Reject non-finite (`NaN`/`Infinity`) inputs and a lead-in longer than the mandrel (which produced unsafe negative-coordinate G-code)
-    - Cleaner errors (4xx, not 500/tracebacks) for directory/binary file inputs across the API and CLI
-    - Marlin desktop commands no longer hang if the helper process dies, and recover by respawning
-    - Helical editor validation now matches the planner's bounds; fixed a crash and a "(NaN)" hint while editing
+    - **GUI rewritten from React to Svelte 5** — a lighter, denser desktop UI reorganized into **Prepare** and **Machine** workspaces, with a native pan/zoom viewport. The production bundle shrank ~48%.
+    - **Bundled local-API sidecar** — the desktop app now spawns and supervises a frozen `fiberpath-api` server, and compute (export, preview, validate) goes through a typed client instead of shelling out to the CLI.
+    - **Body-only, stateless API** — `/plan`, `/validate`, and `/simulate` take their input in the request body (no filesystem paths); `/plan` returns G-code directly. Results share one versioned, camelCase wire schema.
 
-    Builds on the v0.7 baseline; no runtime API changes.
+    The Python package, planner, and `.wind` format are unchanged.
 
     [:octicons-arrow-right-24: Marlin Streaming Guide](guides/marlin-streaming.md)
 
