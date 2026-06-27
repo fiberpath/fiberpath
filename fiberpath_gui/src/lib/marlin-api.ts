@@ -5,8 +5,8 @@
  * for interacting with Marlin controllers via serial connection.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invokeBackend } from "./tauri";
 import type {
   SerialPort,
   StreamProgress,
@@ -19,14 +19,14 @@ import type {
  * List available serial ports
  */
 export async function listSerialPorts(): Promise<SerialPort[]> {
-  return await invoke<SerialPort[]>("marlin_list_ports");
+  return await invokeBackend<SerialPort[]>("marlin_list_ports");
 }
 
 /**
  * Start the interactive Python subprocess
  */
 export async function startInteractive(): Promise<void> {
-  await invoke("marlin_start_interactive");
+  await invokeBackend("marlin_start_interactive");
 }
 
 /**
@@ -36,14 +36,14 @@ export async function connectMarlin(
   port: string,
   baudRate: number = 250000,
 ): Promise<void> {
-  await invoke("marlin_connect", { port, baudRate });
+  await invokeBackend("marlin_connect", { port, baudRate });
 }
 
 /**
  * Disconnect from the Marlin controller
  */
 export async function disconnectMarlin(): Promise<void> {
-  await invoke("marlin_disconnect");
+  await invokeBackend("marlin_disconnect");
 }
 
 /**
@@ -51,7 +51,7 @@ export async function disconnectMarlin(): Promise<void> {
  */
 export async function sendCommand(gcode: string): Promise<string[]> {
   try {
-    const result = await invoke<string[]>("marlin_send_command", { gcode });
+    const result = await invokeBackend<string[]>("marlin_send_command", { gcode });
     return result;
   } catch (error) {
     console.error("Command failed:", error);
@@ -63,35 +63,35 @@ export async function sendCommand(gcode: string): Promise<string[]> {
  * Stream a G-code file to the Marlin controller
  */
 export async function streamFile(filePath: string): Promise<void> {
-  await invoke("marlin_stream_file", { filePath });
+  await invokeBackend("marlin_stream_file", { filePath });
 }
 
 /**
  * Pause streaming (sends M0)
  */
 export async function pauseStream(): Promise<void> {
-  await invoke("marlin_pause");
+  await invokeBackend("marlin_pause");
 }
 
 /**
  * Resume streaming (sends M108)
  */
 export async function resumeStream(): Promise<void> {
-  await invoke("marlin_resume");
+  await invokeBackend("marlin_resume");
 }
 
 /**
  * Cancel streaming (clean exit, stays connected)
  */
 export async function cancelStream(): Promise<void> {
-  await invoke("marlin_cancel");
+  await invokeBackend("marlin_cancel");
 }
 
 /**
  * Stop streaming (sends M112 emergency stop)
  */
 export async function stopStream(): Promise<void> {
-  await invoke("marlin_stop");
+  await invokeBackend("marlin_stop");
 }
 
 /**

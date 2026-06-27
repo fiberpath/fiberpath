@@ -1,12 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { BackendHealthResponseSchema } from "../lib/schemas";
-import { isTauri } from "../lib/tauri";
+import { BROWSER_PREVIEW_MESSAGE, isTauri } from "../lib/tauri";
 
 export type BackendStatus = "ready" | "checking" | "unavailable" | "unknown";
-
-/** Shown when there is no Tauri backend to detect (browser dev preview). */
-const BROWSER_PREVIEW_MESSAGE =
-  "Browser preview — no backend. Run `npm run tauri dev` for the full app.";
 
 /**
  * Backend health: probes the bundled CLI/sidecar via the `check_backend_health`

@@ -7,9 +7,8 @@
  * a failed start resets the memo so the next call retries.
  */
 
-import { invoke } from "@tauri-apps/api/core";
-
 import { createApiClient, type ApiClient } from "../api/client";
+import { invokeBackend } from "./tauri";
 
 let clientPromise: Promise<ApiClient> | null = null;
 
@@ -29,7 +28,7 @@ async function waitForHealth(baseUrl: string, timeoutMs = 30_000): Promise<void>
 }
 
 async function start(): Promise<ApiClient> {
-  const baseUrl = await invoke<string>("api_base_url");
+  const baseUrl = await invokeBackend<string>("api_base_url");
   await waitForHealth(baseUrl);
   return createApiClient(baseUrl);
 }

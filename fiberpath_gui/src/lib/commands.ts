@@ -1,6 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import { getApiClient } from "./apiClient";
+import { invokeBackend } from "./tauri";
 import { withRetry } from "./retry";
 import { CommandError, ValidationError } from "./schemas";
 
@@ -143,7 +142,7 @@ export const validateWindDefinition = withRetry(
 export const saveWindFile = withRetry(
   async (path: string, content: string): Promise<void> => {
     try {
-      await invoke("save_wind_file", { path, content });
+      await invokeBackend("save_wind_file", { path, content });
     } catch (error) {
       throw new CommandError("Failed to save wind file", "save_wind_file", error);
     }
@@ -155,7 +154,7 @@ export const saveWindFile = withRetry(
  */
 export const loadWindFile = withRetry(async (path: string): Promise<string> => {
   try {
-    const result = await invoke<string>("load_wind_file", { path });
+    const result = await invokeBackend<string>("load_wind_file", { path });
     if (typeof result !== "string") {
       throw new ValidationError("Expected string content from load_wind_file");
     }

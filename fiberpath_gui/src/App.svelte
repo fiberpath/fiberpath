@@ -9,7 +9,7 @@
   import MachineWorkspace from "./shell/MachineWorkspace.svelte";
   import UtilityDrawer from "./shell/UtilityDrawer.svelte";
   import Toasts from "./shell/Toasts.svelte";
-  import BackendHealthWarning from "./components/machine/BackendHealthWarning.svelte";
+  import BackendStatusBanner from "./shell/BackendStatusBanner.svelte";
   import AboutDialog from "./components/dialogs/AboutDialog.svelte";
   import DiagnosticsDialog from "./components/dialogs/DiagnosticsDialog.svelte";
   import { onMount } from "svelte";
@@ -103,7 +103,7 @@
 
 <svelte:boundary>
   <div class="app">
-    <BackendHealthWarning />
+    <BackendStatusBanner />
     <MenuBar />
     <WorkspaceTabs />
     <main class="app__workspace">

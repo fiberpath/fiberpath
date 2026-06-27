@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { backendHealth } from "../../state/backend-health.svelte";
-  import BackendUnavailableDialog from "../dialogs/BackendUnavailableDialog.svelte";
+  import { backendHealth } from "../state/backend-health.svelte";
+  import BackendUnavailableDialog from "../components/dialogs/BackendUnavailableDialog.svelte";
 
   let showDialog = $state(false);
 </script>

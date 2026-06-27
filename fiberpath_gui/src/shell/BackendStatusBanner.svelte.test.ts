@@ -3,24 +3,24 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(() => Promise.reject(new Error("no cli"))) }));
 
 import { render, screen, fireEvent } from "@testing-library/svelte";
-import BackendHealthWarning from "./BackendHealthWarning.svelte";
-import { backendHealth } from "../../state/backend-health.svelte";
+import BackendStatusBanner from "./BackendStatusBanner.svelte";
+import { backendHealth } from "../state/backend-health.svelte";
 
 beforeEach(() => {
   backendHealth.status = "ready";
 });
 
-describe("BackendHealthWarning.svelte", () => {
+describe("BackendStatusBanner.svelte", () => {
   it("shows nothing while the backend is healthy", () => {
     backendHealth.status = "ready";
-    render(BackendHealthWarning);
+    render(BackendStatusBanner);
     expect(screen.queryByText("Backend Unavailable")).toBeNull();
   });
 
   it("shows the banner when unavailable and opens the details dialog", async () => {
     backendHealth.status = "unavailable";
     backendHealth.errorMessage = "CLI not found on PATH";
-    render(BackendHealthWarning);
+    render(BackendStatusBanner);
 
     expect(screen.getByText("Backend Unavailable")).toBeInTheDocument();
 

@@ -2,9 +2,14 @@
   import { onMount } from "svelte";
   import { machineSession as m } from "../../state/machine-session.svelte";
   import { BAUD_RATES } from "../../lib/constants";
+  import { isTauri } from "../../lib/tauri";
   import InspectorSection from "../../ui/InspectorSection.svelte";
 
-  onMount(() => void m.refreshPorts());
+  // Only auto-probe ports when the backend exists; in the browser preview this
+  // would surface an unsolicited error on tab entry.
+  onMount(() => {
+    if (isTauri()) void m.refreshPorts();
+  });
 
   const statusText = $derived(
     m.status === "connected"

@@ -9,7 +9,7 @@
   );
   const layerCount = $derived(projectSession.document.layers.length);
 
-  const cliText = $derived(
+  const backendText = $derived(
     backendHealth.isBrowserPreview
       ? "Browser preview"
       : backendHealth.status === "ready"
@@ -20,6 +20,10 @@
             ? "Backend: Unavailable"
             : "Backend: Unknown",
   );
+
+  // Browser preview is an expected dev state, not an error — give the dot its own
+  // info treatment instead of reusing the red "unavailable" status.
+  const dotStatus = $derived(backendHealth.isBrowserPreview ? "preview" : backendHealth.status);
 </script>
 
 <footer class="statusbar">
@@ -38,8 +42,8 @@
   {/if}
 
   <div class="statusbar__item statusbar__item--meta">
-    <span class="statusbar__dot" data-status={backendHealth.status} aria-hidden="true"></span>
-    <span class="statusbar__value">{cliText}</span>
+    <span class="statusbar__dot" data-status={dotStatus} aria-hidden="true"></span>
+    <span class="statusbar__value">{backendText}</span>
   </div>
 </footer>
 
@@ -100,5 +104,8 @@
   }
   .statusbar__dot[data-status="unavailable"] {
     background: var(--status-error-fg);
+  }
+  .statusbar__dot[data-status="preview"] {
+    background: var(--status-info-fg);
   }
 </style>

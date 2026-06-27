@@ -5,6 +5,11 @@ import * as matchers from "@testing-library/jest-dom/matchers";
 // test is handled by the @testing-library/svelte vite plugin (svelteTesting()).
 expect.extend(matchers);
 
+// The app's primary runtime is the Tauri webview, so isTauri() (and the
+// invokeBackend guard) should resolve true by default in tests. Suites that
+// exercise the backend-less browser preview delete this global themselves.
+(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ ??= {};
+
 // Mock crypto.randomUUID for tests
 if (!global.crypto) {
   (global as any).crypto = {
