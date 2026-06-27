@@ -5,7 +5,17 @@
   let showDialog = $state(false);
 </script>
 
-{#if cliHealth.isUnavailable}
+{#if cliHealth.isBrowserPreview}
+  <div class="cli-warning-banner cli-warning-banner--info">
+    <div class="cli-warning-banner__content">
+      <span class="cli-warning-banner__icon">🌐</span>
+      <div class="cli-warning-banner__text">
+        <strong>Browser preview</strong>
+        <span>Running without the desktop backend. Use <code>npm run tauri dev</code> for compute, file, and machine features.</span>
+      </div>
+    </div>
+  </div>
+{:else if cliHealth.isUnavailable}
   <div class="cli-warning-banner">
     <div class="cli-warning-banner__content">
       <span class="cli-warning-banner__icon">⚠️</span>

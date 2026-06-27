@@ -14,6 +14,16 @@
   animation: slideDown var(--transition-base);
 }
 
+.cli-warning-banner--info {
+  background: var(--status-info-bg);
+  border-bottom-color: var(--status-info);
+  border-left-color: var(--status-info);
+}
+
+.cli-warning-banner--info .cli-warning-banner__text strong {
+  color: var(--status-info);
+}
+
 .cli-warning-banner__content {
   display: flex;
   align-items: center;
