@@ -76,6 +76,13 @@ npm run tauri dev
 ```
 
 The `tauri dev` command spawns the Vite dev server and opens the desktop shell.
+It is the canonical dev loop: the Rust shell also starts the API sidecar, so
+compute/file/machine features work (status bar shows **CLI: Ready**).
+
+> `npm run dev` alone serves the UI in a browser at `http://localhost:5173` with
+> **no backend** (it shows a "Browser preview" banner) — use it only for styling
+> and layout. Likewise, don't QA the prebuilt `release` binary; it can embed a
+> stale frontend. See [../docs/development.md](../docs/development.md).
 
 ### Main Tab
 

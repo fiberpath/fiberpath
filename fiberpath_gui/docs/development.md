@@ -84,10 +84,13 @@ fiberpath --version
 npm run tauri dev
 ```
 
-This starts:
+**This is the canonical dev loop** — the only command that runs the GUI with a
+working backend. It starts:
 
 - Vite dev server with HMR (Hot Module Replacement)
 - Tauri window with development console enabled
+- The API sidecar, spawned and supervised by the Rust shell (compute, file, and
+  machine features work; the status bar reads **CLI: Ready**)
 - File watcher for Rust changes (auto-rebuild)
 
 **Hot Reload:**
@@ -95,19 +98,25 @@ This starts:
 - Frontend changes (Svelte/TypeScript) reload instantly
 - Rust changes trigger rebuild (~5-15 seconds)
 
-### Run Frontend Only
+> **Don't QA the prebuilt `src-tauri/target/release/fiberpath_gui` binary.** It
+> embeds the frontend that existed when it was last compiled, which is often
+> stale. Always use `npm run tauri dev` (or rebuild) to exercise current code.
+
+### Run Frontend Only (no backend)
 
 ```sh
 npm run dev
 ```
 
-Starts Vite dev server at `http://localhost:5173`. Useful for:
+Starts the Vite dev server at `http://localhost:5173` for **UI-only** work —
+styling, layout, component iteration with browser DevTools.
 
-- UI development without Tauri overhead
-- Browser DevTools debugging
-- Faster iteration on styling/components
-
-**Note:** Tauri commands will fail in browser mode.
+**There is no backend in this mode.** The sidecar URL and health are obtained
+through the Tauri bridge (`invoke("api_base_url")` / `check_cli_health`), which
+does not exist in a plain browser — so compute, file, and machine features are
+unavailable. The app detects this and shows a calm **"Browser preview"** banner
+(status bar: **Browser preview**) rather than an error. For anything that needs
+the backend, use `npm run tauri dev`.
 
 ## Testing
 

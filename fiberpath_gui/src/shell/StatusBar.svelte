@@ -10,13 +10,15 @@
   const layerCount = $derived(projectSession.document.layers.length);
 
   const cliText = $derived(
-    cliHealth.status === "ready"
-      ? "CLI: Ready"
-      : cliHealth.status === "checking"
-        ? "CLI: Checking…"
-        : cliHealth.status === "unavailable"
-          ? "CLI: Unavailable"
-          : "CLI: Unknown",
+    cliHealth.isBrowserPreview
+      ? "Browser preview"
+      : cliHealth.status === "ready"
+        ? "CLI: Ready"
+        : cliHealth.status === "checking"
+          ? "CLI: Checking…"
+          : cliHealth.status === "unavailable"
+            ? "CLI: Unavailable"
+            : "CLI: Unknown",
   );
 </script>
 

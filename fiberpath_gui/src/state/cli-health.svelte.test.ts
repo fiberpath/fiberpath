@@ -1,11 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
 import { CliHealth } from "./cli-health.svelte";
 
-beforeEach(() => vi.clearAllMocks());
+// Simulate the Tauri webview so refresh() takes the real backend path.
+beforeEach(() => {
+  vi.clearAllMocks();
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+});
+afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+});
 
 describe("CliHealth", () => {
   it("reports ready on a healthy response", async () => {
@@ -42,5 +49,15 @@ describe("CliHealth", () => {
     await h.refresh();
     expect(h.status).toBe("unavailable");
     expect(h.errorMessage).toContain("Invalid response schema");
+  });
+
+  it("reports a browser preview (no invoke) when there is no Tauri runtime", async () => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    const h = new CliHealth();
+    await h.refresh();
+    expect(h.isBrowserPreview).toBe(true);
+    expect(h.status).toBe("unavailable");
+    expect(h.errorMessage).toContain("tauri dev");
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
