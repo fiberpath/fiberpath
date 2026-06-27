@@ -95,8 +95,8 @@
     margin: var(--spacing-sm) 0;
   }
   .status__dot {
-    width: 8px;
-    height: 8px;
+    width: var(--dot-size);
+    height: var(--dot-size);
     border-radius: var(--border-radius-round);
     background: var(--color-text-muted);
   }

@@ -87,8 +87,8 @@
     border: 0;
   }
   .statusbar__dot {
-    width: 7px;
-    height: 7px;
+    width: var(--dot-size);
+    height: var(--dot-size);
     border-radius: var(--border-radius-round);
     background: var(--color-text-muted);
   }

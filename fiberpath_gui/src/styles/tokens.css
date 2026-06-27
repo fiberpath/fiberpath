@@ -70,21 +70,17 @@
   /* Success */
   --color-success: #22c55e; /* was #32d2b6 — collided with brand teal */
   --color-success-bg: rgb(34, 197, 94, 0.1);
-  --color-success-green: #22c55e;
-  --color-success-green-hover: #16a34a;
 
   /* Error */
   --color-error: #ef4444;
   --color-error-bg: rgb(239, 68, 68, 0.1);
-  --color-error-red: #ef4444;
-  --color-error-red-light: #f87171;
+  --color-error-red-light: #f87171; /* lighter shade — danger hover + dark error fg */
 
   /* Warning */
   --color-warning: #f97316;
   --color-warning-bg: rgb(249, 115, 22, 0.1);
-  --color-warning-orange: #f97316;
-  --color-warning-orange-hover: #ea580c;
-  --color-warning-yellow: #eab308;
+  --color-warning-orange-hover: #ea580c; /* warn button hover */
+  --color-warning-yellow: #eab308; /* caution — distinct hue from warning orange */
 
   /* Info */
   --color-info: #64b5f6;
@@ -94,11 +90,11 @@
      --status-* = saturated fill/intent (button bg, paired with --color-text-inverse).
      --status-*-fg = foreground for text/icons/dots/borders on neutral surfaces;
      bright on dark panels here, darkened per-theme in the light blocks for AA. */
-  --status-success: var(--color-success-green);
-  --status-warning: var(--color-warning-orange);
+  --status-success: var(--color-success);
+  --status-warning: var(--color-warning);
   --status-warning-bg: var(--color-warning-bg);
   --status-caution: var(--color-warning-yellow);
-  --status-error: var(--color-error-red);
+  --status-error: var(--color-error);
   --status-error-bg: var(--color-error-bg);
   --status-info: var(--color-info);
   --status-info-bg: var(--color-info-bg);
@@ -110,8 +106,6 @@
 
   /* Stream/console utility palette */
   --color-slate-400: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-blue-500: #3b82f6;
 
   /* ========================================
      SPACING SCALE
@@ -155,10 +149,11 @@
      ======================================== */
   --menubar-height: 2rem;
   --statusbar-height: 1.75rem;
-  --panel-header-height: 2.5rem;
-  --layer-row-height: 3.5rem;
   --input-height: 2rem;
   --input-height-sm: 1.75rem;
+  --rail-width: 300px; /* left inspector rail (Prepare + Machine) */
+  --rail-width-right: 280px; /* right inspector rail (Prepare) */
+  --dot-size: 0.5rem; /* status indicator dot */
 }
 
 /* Manual light theme override */
@@ -181,8 +176,6 @@
   --color-border-focus: #0b766b; /* darkened teal — focus ring >=3:1 on white */
   --color-primary-soft: #0b766b; /* darkened teal — link/accent text >=4.5:1 on white */
   --color-slate-400: #64748b;
-  --color-slate-500: #475569;
-  --color-blue-500: #1d4ed8;
 
   /* Darkened status foregrounds for AA on near-white surfaces. */
   --status-error-fg: #c62828;
@@ -213,8 +206,6 @@
     --color-border-focus: #0b766b;
     --color-primary-soft: #0b766b;
     --color-slate-400: #64748b;
-    --color-slate-500: #475569;
-    --color-blue-500: #1d4ed8;
     --status-error-fg: #c62828;
     --status-warning-fg: #b45309;
     --status-success-fg: #15803d;

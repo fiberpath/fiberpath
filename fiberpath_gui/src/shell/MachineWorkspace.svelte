@@ -28,7 +28,7 @@
 <style>
   .machine {
     display: grid;
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: var(--rail-width) 1fr;
     height: 100%;
     min-height: 0;
   }

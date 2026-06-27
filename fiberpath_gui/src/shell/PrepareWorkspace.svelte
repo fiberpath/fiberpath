@@ -57,15 +57,15 @@
 <style>
   .prepare {
     display: grid;
-    grid-template-columns: 300px 1fr 280px;
+    grid-template-columns: var(--rail-width) 1fr var(--rail-width-right);
     height: 100%;
     min-height: 0;
   }
   .prepare--no-left {
-    grid-template-columns: 1fr 280px;
+    grid-template-columns: 1fr var(--rail-width-right);
   }
   .prepare--no-right {
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: var(--rail-width) 1fr;
   }
   .prepare--no-left.prepare--no-right {
     grid-template-columns: 1fr;
