@@ -20,7 +20,6 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/main.svelte.ts',
         'src/tests/**',
-        'src/vite-env.d.ts',
         'src/types/wind-schema.ts',
       ],
       thresholds: {

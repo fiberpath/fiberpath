@@ -1,60 +1,6 @@
 /**
- * Shared type definitions for component props across the application.
- * These types ensure consistency in callback signatures and common patterns.
+ * Numeric range constraints shared by the config forms and layer editors.
  */
-
-/**
- * Standard callback for close/cancel actions in dialogs and modals.
- * @example
- * ```tsx
- * function MyDialog({ onClose }: { onClose: OnCloseCallback }) {
- *   return <button onClick={onClose}>Close</button>
- * }
- * ```
- */
-export type OnCloseCallback = () => void;
-
-/**
- * Standard callback for generic change events.
- * @template T - The type of value being changed
- * @example
- * ```tsx
- * function NumberInput({ value, onChange }: { value: number; onChange: OnChangeCallback<number> }) {
- *   return <input type="number" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
- * }
- * ```
- */
-export type OnChangeCallback<T> = (value: T) => void;
-
-/**
- * Props for components that edit a specific layer by ID.
- * All layer editor components should extend this interface.
- * @example
- * ```tsx
- * interface HoopLayerEditorProps extends LayerEditorBaseProps {
- *   // Additional hoop-specific props
- * }
- * ```
- */
-export interface LayerEditorBaseProps {
-  /** The unique identifier of the layer being edited */
-  layerId: string;
-}
-
-/**
- * Props for dialog components that require a close callback.
- * All dialog components should extend this interface.
- * @example
- * ```tsx
- * interface AboutDialogProps extends DialogBaseProps {
- *   version: string;
- * }
- * ```
- */
-export interface DialogBaseProps {
-  /** Callback invoked when the dialog should be closed */
-  onClose: OnCloseCallback;
-}
 
 /**
  * Numeric range constraint for input validation.

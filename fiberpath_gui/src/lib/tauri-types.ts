@@ -30,10 +30,3 @@ export interface StreamStarted {
   file: string;
   totalCommands: number;
 }
-
-// Event payload types
-export type MarlinEvent =
-  | { type: "stream-started"; payload: StreamStarted }
-  | { type: "stream-progress"; payload: StreamProgress }
-  | { type: "stream-complete"; payload: StreamComplete }
-  | { type: "stream-error"; payload: StreamError };

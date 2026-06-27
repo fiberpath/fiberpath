@@ -2,13 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { getApiClient } from "./apiClient";
 import { withRetry } from "./retry";
-import {
-  CommandError,
-  StreamSummarySchema,
-  ValidationError,
-  validateData,
-  type StreamSummary,
-} from "./schemas";
+import { CommandError, ValidationError } from "./schemas";
 
 /** Result of an export plan: the file written and how many commands it holds. */
 export interface PlanSummary {
@@ -142,27 +136,6 @@ export const validateWindDefinition = withRetry(
   },
   { maxAttempts: 2 },
 );
-
-/**
- * Streams G-code to Marlin hardware (or dry-run mode). Still routed through the
- * Tauri Marlin bridge; the REST surface for this lands with #190/#199.
- */
-export async function streamProgram(
-  gcodePath: string,
-  options: { port?: string; baudRate: number; dryRun: boolean },
-): Promise<StreamSummary> {
-  try {
-    const result = await invoke("stream_program", {
-      gcodePath,
-      port: options.port,
-      baudRate: options.baudRate,
-      dryRun: options.dryRun,
-    });
-    return validateData(StreamSummarySchema, result, "stream_program response");
-  } catch (error) {
-    throw new CommandError("Failed to stream program", "stream_program", error);
-  }
-}
 
 /**
  * Saves file content to disk through the Tauri file-system bridge (native).

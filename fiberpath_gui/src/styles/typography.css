@@ -61,8 +61,3 @@ p {
 p:last-child {
   margin-bottom: 0;
 }
-
-/* Text Utilities */
-.text-mono {
-  font-family: var(--font-family-mono);
-}

@@ -1,8 +1,0 @@
-{
-  "name": "generate-wind-types",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "generate": "json2ts -i schemas/wind-schema.json -o src/types/wind-schema.ts --bannerComment '/* eslint-disable */\\n// Auto-generated from wind-schema.json - DO NOT EDIT MANUALLY'"
-  }
-}

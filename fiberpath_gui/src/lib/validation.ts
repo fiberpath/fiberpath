@@ -1,6 +1,5 @@
 import Ajv, { type ValidateFunction, type ErrorObject } from "ajv";
 import windSchema from "../../schemas/wind-schema.json";
-import type { WindDefinition } from "../types/wind-schema";
 
 let ajv: Ajv | null = null;
 let validate: ValidateFunction | null = null;
@@ -45,15 +44,4 @@ export function validateWindDefinition(data: unknown): {
   );
 
   return { valid: false, errors };
-}
-
-/**
- * Type guard for narrowing unknown data to WindDefinition.
- * Useful when only a boolean validity check is needed.
- */
-export function isValidWindDefinition(
-  data: unknown,
-): data is WindDefinition {
-  const validator = getValidator();
-  return validator(data);
 }

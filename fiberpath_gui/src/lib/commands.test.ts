@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   planWind,
-  streamProgram,
   plotDefinition,
   saveWindFile,
   loadWindFile,
@@ -117,27 +116,6 @@ describe("commands", () => {
     it("throws CommandError when the request itself fails", async () => {
       mockPost.mockRejectedValue(new Error("network down"));
       await expect(validateWindDefinition("{}")).rejects.toBeInstanceOf(CommandError);
-    });
-  });
-
-  describe("streamProgram()", () => {
-    it("returns validated StreamSummary on success", async () => {
-      mockInvoke.mockResolvedValue({
-        status: "complete",
-        commands: 50,
-        total: 50,
-        baudRate: 250000,
-        dryRun: true,
-      });
-      const result = await streamProgram("/file.gcode", { baudRate: 250000, dryRun: true });
-      expect(result.commands).toBe(50);
-    });
-
-    it("throws CommandError on invoke failure", async () => {
-      mockInvoke.mockRejectedValue(new Error("stream error"));
-      await expect(
-        streamProgram("/file.gcode", { baudRate: 250000, dryRun: false }),
-      ).rejects.toBeInstanceOf(CommandError);
     });
   });
 

@@ -37,33 +37,3 @@ export function addRecentFile(path: string): void {
     // Silently fail - localStorage may be unavailable
   }
 }
-
-export function removeRecentFile(path: string): void {
-  try {
-    const recent = getRecentFiles();
-    const updated = recent.filter((f) => f.path !== path);
-    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updated));
-  } catch (error) {
-    // Silently fail - localStorage may be unavailable
-  }
-}
-
-export function clearRecentFiles(): void {
-  try {
-    localStorage.removeItem(RECENT_FILES_KEY);
-  } catch (error) {
-    // Silently fail - localStorage may be unavailable
-  }
-}
-
-export function formatRecentFileName(path: string): string {
-  // Extract filename from path
-  const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] || path;
-}
-
-export function formatRecentFilePath(path: string): string {
-  // Show directory path without filename
-  const parts = path.split(/[\\/]/);
-  return parts.slice(0, -1).join("/") || "/";
-}

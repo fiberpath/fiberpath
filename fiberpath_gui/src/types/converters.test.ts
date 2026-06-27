@@ -3,10 +3,8 @@ import {
   convertLayerToWindSchema,
   convertWindSchemaToLayer,
   projectToWindDefinition,
-  windDefinitionToProject,
 } from "./converters";
-import { createLayer, type Layer, type FiberPathProject } from "./project";
-import type { WindDefinition } from "./wind-schema";
+import { createLayer, type Layer } from "./project";
 
 describe("converters", () => {
   describe("convertLayerToWindSchema", () => {
@@ -191,9 +189,7 @@ describe("converters", () => {
 
   describe("projectToWindDefinition", () => {
     it("should convert full project to wind definition", () => {
-      const project: FiberPathProject = {
-        filePath: "/test/file.wind",
-        isDirty: false,
+      const project = {
         mandrel: { diameter: 120, wind_length: 250 },
         tow: { width: 4, thickness: 0.3 },
         layers: [
@@ -215,9 +211,8 @@ describe("converters", () => {
               skip_initial_near_lock: true,
             },
           },
-        ],
+        ] as Layer[],
         defaultFeedRate: 2500,
-        activeLayerId: "layer-2",
       };
 
       const result = projectToWindDefinition(project);
@@ -253,9 +248,7 @@ describe("converters", () => {
     });
 
     it("should respect visibleLayerCount parameter", () => {
-      const project: FiberPathProject = {
-        filePath: null,
-        isDirty: false,
+      const project = {
         mandrel: { diameter: 100, wind_length: 200 },
         tow: { width: 3, thickness: 0.25 },
         layers: [
@@ -274,9 +267,8 @@ describe("converters", () => {
             },
           },
           { id: "3", type: "skip", skip: { mandrel_rotation: 90 } },
-        ],
+        ] as Layer[],
         defaultFeedRate: 2000,
-        activeLayerId: null,
       };
 
       const result = projectToWindDefinition(project, 2);
@@ -287,9 +279,7 @@ describe("converters", () => {
     });
 
     it("should include all layers when visibleLayerCount is not provided", () => {
-      const project: FiberPathProject = {
-        filePath: null,
-        isDirty: false,
+      const project = {
         mandrel: { diameter: 100, wind_length: 200 },
         tow: { width: 3, thickness: 0.25 },
         layers: [
@@ -308,188 +298,13 @@ describe("converters", () => {
             },
           },
           { id: "3", type: "skip", skip: { mandrel_rotation: 90 } },
-        ],
+        ] as Layer[],
         defaultFeedRate: 2000,
-        activeLayerId: null,
       };
 
       const result = projectToWindDefinition(project);
 
       expect(result.layers).toHaveLength(3);
-    });
-  });
-
-  describe("windDefinitionToProject", () => {
-    it("should convert wind definition to project", () => {
-      const windDef: WindDefinition = {
-        schemaVersion: "1.0",
-        mandrelParameters: {
-          diameter: 130,
-          windLength: 280,
-        },
-        towParameters: {
-          width: 5,
-          thickness: 0.4,
-        },
-        defaultFeedRate: 3000,
-        layers: [
-          {
-            windType: "hoop",
-            terminal: true,
-          },
-          {
-            windType: "helical",
-            windAngle: 65,
-            patternNumber: 6,
-            skipIndex: 3,
-            lockDegrees: 9,
-            leadInMM: 18,
-            leadOutDegrees: 9,
-            skipInitialNearLock: true,
-          },
-          {
-            windType: "skip",
-            mandrelRotation: 120,
-          },
-        ],
-      };
-
-      const result = windDefinitionToProject(windDef, "/path/to/file.wind");
-
-      expect(result.filePath).toBe("/path/to/file.wind");
-      expect(result.isDirty).toBe(false);
-      expect(result.mandrel).toEqual({ diameter: 130, wind_length: 280 });
-      expect(result.tow).toEqual({ width: 5, thickness: 0.4 });
-      expect(result.defaultFeedRate).toBe(3000);
-      expect(result.layers).toHaveLength(3);
-      expect(result.layers[0].type).toBe("hoop");
-      expect(result.layers[1].type).toBe("helical");
-      expect(result.layers[2].type).toBe("skip");
-      expect(result.activeLayerId).toBeNull();
-    });
-
-    it("should default filePath to null when not provided", () => {
-      const windDef: WindDefinition = {
-        schemaVersion: "1.0",
-        mandrelParameters: { diameter: 100, windLength: 200 },
-        towParameters: { width: 3, thickness: 0.25 },
-        defaultFeedRate: 2000,
-        layers: [],
-      };
-
-      const result = windDefinitionToProject(windDef);
-
-      expect(result.filePath).toBeNull();
-    });
-
-    it("should handle empty layers array", () => {
-      const windDef: WindDefinition = {
-        schemaVersion: "1.0",
-        mandrelParameters: { diameter: 100, windLength: 200 },
-        towParameters: { width: 3, thickness: 0.25 },
-        defaultFeedRate: 2000,
-        layers: [],
-      };
-
-      const result = windDefinitionToProject(windDef);
-
-      expect(result.layers).toHaveLength(0);
-      expect(result.activeLayerId).toBeNull();
-    });
-
-    it("should preserve layer order", () => {
-      const windDef: WindDefinition = {
-        schemaVersion: "1.0",
-        mandrelParameters: { diameter: 100, windLength: 200 },
-        towParameters: { width: 3, thickness: 0.25 },
-        defaultFeedRate: 2000,
-        layers: [
-          { windType: "skip", mandrelRotation: 45 },
-          {
-            windType: "helical",
-            windAngle: 30,
-            patternNumber: 2,
-            skipIndex: 1,
-            lockDegrees: 3,
-            leadInMM: 5,
-            leadOutDegrees: 3,
-            skipInitialNearLock: false,
-          },
-          { windType: "hoop", terminal: false },
-        ],
-      };
-
-      const result = windDefinitionToProject(windDef);
-
-      expect(result.layers[0].type).toBe("skip");
-      expect(result.layers[1].type).toBe("helical");
-      expect(result.layers[2].type).toBe("hoop");
-    });
-  });
-
-  describe("round-trip conversion", () => {
-    it("should preserve data through project -> wind -> project conversion", () => {
-      const originalProject: FiberPathProject = {
-        filePath: "/test.wind",
-        isDirty: false,
-        mandrel: { diameter: 150, wind_length: 300 },
-        tow: { width: 6, thickness: 0.5 },
-        layers: [
-          {
-            id: "layer-1",
-            type: "hoop",
-            hoop: { terminal: true },
-          },
-          {
-            id: "layer-2",
-            type: "helical",
-            helical: {
-              wind_angle: 70,
-              pattern_number: 8,
-              skip_index: 5,
-              lock_degrees: 15,
-              lead_in_mm: 25,
-              lead_out_degrees: 12,
-              skip_initial_near_lock: true,
-            },
-          },
-          {
-            id: "layer-3",
-            type: "skip",
-            skip: { mandrel_rotation: 135 },
-          },
-        ],
-        defaultFeedRate: 3500,
-        activeLayerId: "layer-2",
-      };
-
-      // Convert to wind definition and back
-      const windDef = projectToWindDefinition(originalProject);
-      const roundTripProject = windDefinitionToProject(
-        windDef,
-        originalProject.filePath!,
-      );
-
-      // Check that critical data is preserved (IDs will be different)
-      expect(roundTripProject.mandrel).toEqual(originalProject.mandrel);
-      expect(roundTripProject.tow).toEqual(originalProject.tow);
-      expect(roundTripProject.defaultFeedRate).toEqual(
-        originalProject.defaultFeedRate,
-      );
-      expect(roundTripProject.layers).toHaveLength(
-        originalProject.layers.length,
-      );
-
-      // Check layer types and data
-      expect(roundTripProject.layers[0].type).toBe("hoop");
-      expect(roundTripProject.layers[0].hoop?.terminal).toBe(true);
-
-      expect(roundTripProject.layers[1].type).toBe("helical");
-      expect(roundTripProject.layers[1].helical?.wind_angle).toBe(70);
-      expect(roundTripProject.layers[1].helical?.pattern_number).toBe(8);
-
-      expect(roundTripProject.layers[2].type).toBe("skip");
-      expect(roundTripProject.layers[2].skip?.mandrel_rotation).toBe(135);
     });
   });
 });

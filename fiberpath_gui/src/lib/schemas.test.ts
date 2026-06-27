@@ -9,7 +9,6 @@ import {
   WindLayerSchema,
   WindDefinitionSchema,
   validateData,
-  isValidData,
   FiberPathError,
   FileError,
   ValidationError,
@@ -252,26 +251,6 @@ describe("schemas", () => {
       });
     });
 
-    describe("isValidData", () => {
-      it("should return true for valid data", () => {
-        const data = { diameter: 100, windLength: 200 };
-        expect(isValidData(MandrelParametersSchema, data)).toBe(true);
-      });
-
-      it("should return false for invalid data", () => {
-        const data = { diameter: -50, windLength: 200 };
-        expect(isValidData(MandrelParametersSchema, data)).toBe(false);
-      });
-
-      it("should act as type guard", () => {
-        const data: unknown = { diameter: 100, windLength: 200 };
-
-        if (isValidData(MandrelParametersSchema, data)) {
-          // TypeScript should know data is validated type here
-          expect((data as { diameter: number }).diameter).toBe(100);
-        }
-      });
-    });
   });
 
   describe("Custom Error Classes", () => {

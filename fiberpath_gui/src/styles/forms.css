@@ -9,11 +9,6 @@
   padding: 0;
 }
 
-/* App composition helper for stacked forms */
-.app-form-section {
-  margin-top: var(--spacing-xl);
-}
-
 .param-form__title {
   margin: 0 0 var(--spacing-lg);
   padding-bottom: var(--spacing-sm);
@@ -41,8 +36,7 @@
   color: var(--color-text);
 }
 
-.param-form__input-wrapper,
-.layer-editor__input-wrapper {
+.param-form__input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
@@ -50,9 +44,7 @@
 
 /* Shared control chrome */
 .param-form__input,
-select,
-.param-form__select,
-.layer-editor__input {
+select {
   width: 100%;
   min-height: var(--input-height);
   border: var(--border-width-thin) solid var(--color-border);
@@ -64,20 +56,15 @@ select,
     box-shadow var(--transition-fast);
 }
 
-.param-form__input,
-.layer-editor__input {
-  font-family: var(--font-family-mono);
-}
-
 .param-form__input {
   flex: 1;
   height: var(--input-height);
   padding: var(--spacing-sm) 3rem var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-base);
+  font-family: var(--font-family-mono);
 }
 
-select,
-.param-form__select {
+select {
   cursor: pointer;
   height: auto;
   padding: var(--spacing-sm) var(--spacing-md);
@@ -85,24 +72,13 @@ select,
   font-family: var(--font-family-base);
 }
 
-.layer-editor__input {
-  flex: 1;
-  padding: var(--spacing-sm) calc(var(--spacing-2xl) + var(--spacing-sm))
-    var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-sm);
-}
-
 .param-form__input:hover,
-select:hover,
-.param-form__select:hover,
-.layer-editor__input:hover {
+select:hover {
   border-color: var(--color-border-focus);
 }
 
 .param-form__input:focus,
-select:focus,
-.param-form__select:focus,
-.layer-editor__input:focus {
+select:focus {
   outline: none;
   border-color: var(--color-border-focus);
   box-shadow:
@@ -110,63 +86,42 @@ select:focus,
 }
 
 /* Validation states */
-.param-form__input--error,
-.layer-editor__input--error {
+.param-form__input--error {
   border-color: var(--color-error);
 }
 
-.param-form__input--error:focus,
-.layer-editor__input--error:focus {
+.param-form__input--error:focus {
   border-color: var(--color-error);
   box-shadow:
     0 0 0 var(--border-width-medium) var(--color-border-focus);
 }
 
 /* Input Unit Labels */
-.param-form__unit,
-.layer-editor__unit {
+.param-form__unit {
   position: absolute;
   right: var(--spacing-md);
   pointer-events: none;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
-}
-
-.param-form__unit {
   font-size: var(--font-size-sm);
-}
-
-.layer-editor__unit {
-  font-size: var(--font-size-xs);
 }
 
 /* Validation Messages */
-.param-form__error,
-.layer-editor__error {
+.param-form__error {
   display: block;
   margin-top: var(--spacing-xs);
   color: var(--color-error);
-}
-
-.param-form__error {
   font-size: var(--font-size-sm);
-}
-
-.layer-editor__error {
-  font-size: var(--font-size-xs);
 }
 
 /* Remove spinner arrows from number inputs */
 .param-form__input::-webkit-outer-spin-button,
-.param-form__input::-webkit-inner-spin-button,
-.layer-editor__input::-webkit-outer-spin-button,
-.layer-editor__input::-webkit-inner-spin-button {
+.param-form__input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-.param-form__input[type="number"],
-.layer-editor__input[type="number"] {
+.param-form__input[type="number"] {
   -moz-appearance: textfield;
 }
 

@@ -34,14 +34,12 @@ button {
 }
 
 .btn:focus-visible,
-.btn--icon-only:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
 
-.btn:disabled,
-.btn--icon-only:disabled {
+.btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -90,57 +88,6 @@ button:focus-visible {
   background: var(--color-bg-active);
 }
 
-/* Danger Button */
-.btn--danger {
-  background: var(--color-error);
-  border-color: var(--color-error);
-  color: var(--color-text-inverse);
-  font-weight: var(--font-weight-semibold);
-}
-
-.btn--danger:hover:not(:disabled) {
-  background: var(--color-error-red-light);
-  border-color: var(--color-error-red-light);
-}
-
-.btn--danger:active:not(:disabled) {
-  background: var(--color-error);
-}
-
-/* Success Button */
-.btn--success {
-  background: var(--status-success);
-  border-color: var(--status-success);
-  color: var(--color-text-inverse);
-  font-weight: var(--font-weight-semibold);
-}
-
-.btn--success:hover:not(:disabled) {
-  background: var(--color-success-green-hover);
-  border-color: var(--color-success-green-hover);
-}
-
-.btn--success:active:not(:disabled) {
-  background: var(--status-success);
-}
-
-/* Warning Button */
-.btn--warning {
-  background: var(--status-warning);
-  border-color: var(--status-warning);
-  color: var(--color-text-inverse);
-  font-weight: var(--font-weight-semibold);
-}
-
-.btn--warning:hover:not(:disabled) {
-  background: var(--color-warning-orange-hover);
-  border-color: var(--color-warning-orange-hover);
-}
-
-.btn--warning:active:not(:disabled) {
-  background: var(--status-warning);
-}
-
 /* Ghost Button */
 .btn--ghost {
   background: transparent;
@@ -156,24 +103,4 @@ button:focus-visible {
 
 .btn--ghost:active:not(:disabled) {
   background: var(--color-bg-active);
-}
-
-/* Icon Button */
-.btn--icon-only {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--spacing-2xl);
-  height: var(--spacing-2xl);
-  border: 1px solid transparent;
-  border-radius: var(--border-radius-md);
-  background: transparent;
-  color: var(--color-text-muted);
-  transition: var(--transition-colors);
-}
-
-.btn--icon-only:hover:not(:disabled) {
-  background: var(--color-bg-hover);
-  border-color: var(--color-border);
-  color: var(--color-text);
 }

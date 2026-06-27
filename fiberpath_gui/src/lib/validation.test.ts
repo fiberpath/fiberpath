@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { validateWindDefinition, isValidWindDefinition } from "./validation";
+import { validateWindDefinition } from "./validation";
 import type { WindDefinition } from "../types/wind-schema";
 
 describe("Wind Definition Validation", () => {
@@ -27,7 +27,6 @@ describe("Wind Definition Validation", () => {
       const result = validateWindDefinition(validDef);
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
-      expect(isValidWindDefinition(validDef)).toBe(true);
     });
 
     it("should validate a helical layer with all required fields", () => {
@@ -316,41 +315,6 @@ describe("Wind Definition Validation", () => {
       const result = validateWindDefinition({});
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe("Type guard", () => {
-    it("should return true for valid definition", () => {
-      const validDef: WindDefinition = {
-        schemaVersion: "1.0",
-        mandrelParameters: {
-          diameter: 150,
-          windLength: 800,
-        },
-        towParameters: {
-          width: 12,
-          thickness: 0.25,
-        },
-        defaultFeedRate: 1000,
-        layers: [
-          {
-            windType: "hoop",
-            terminal: false,
-          },
-        ],
-      };
-
-      expect(isValidWindDefinition(validDef)).toBe(true);
-    });
-
-    it("should return false for invalid definition", () => {
-      const invalidDef = {
-        mandrelParameters: {
-          diameter: -150, // Negative value
-        },
-      };
-
-      expect(isValidWindDefinition(invalidDef)).toBe(false);
     });
   });
 

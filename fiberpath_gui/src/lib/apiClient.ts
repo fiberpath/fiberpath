@@ -44,8 +44,3 @@ export function getApiClient(): Promise<ApiClient> {
   }
   return clientPromise;
 }
-
-/** Reset the memoised client (e.g. for tests, or to force a fresh sidecar URL). */
-export function resetApiClient(): void {
-  clientPromise = null;
-}

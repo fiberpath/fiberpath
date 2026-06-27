@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  getRecentFiles,
-  addRecentFile,
-  removeRecentFile,
-  clearRecentFiles,
-  formatRecentFileName,
-  formatRecentFilePath,
-} from "./recentFiles";
+import { getRecentFiles, addRecentFile } from "./recentFiles";
 
 const RECENT_FILES_KEY = "fiberpath_recent_files";
 
@@ -74,69 +67,4 @@ describe("recentFiles", () => {
     });
   });
 
-  describe("removeRecentFile()", () => {
-    it("removes a file by path", () => {
-      addRecentFile("/a.wind");
-      addRecentFile("/b.wind");
-      removeRecentFile("/a.wind");
-
-      const files = getRecentFiles();
-      expect(files).toHaveLength(1);
-      expect(files[0].path).toBe("/b.wind");
-    });
-
-    it("does nothing when path is not in the list", () => {
-      addRecentFile("/a.wind");
-      removeRecentFile("/nonexistent.wind");
-      expect(getRecentFiles()).toHaveLength(1);
-    });
-  });
-
-  describe("clearRecentFiles()", () => {
-    it("empties the list", () => {
-      addRecentFile("/a.wind");
-      addRecentFile("/b.wind");
-      clearRecentFiles();
-      expect(getRecentFiles()).toEqual([]);
-    });
-
-    it("is a no-op when list is already empty", () => {
-      clearRecentFiles();
-      expect(getRecentFiles()).toEqual([]);
-    });
-  });
-
-  describe("formatRecentFileName()", () => {
-    it("extracts the filename from a Unix path", () => {
-      expect(formatRecentFileName("/home/user/project/my-part.wind")).toBe(
-        "my-part.wind",
-      );
-    });
-
-    it("extracts the filename from a Windows path", () => {
-      expect(formatRecentFileName("C:\\Users\\user\\project\\my-part.wind")).toBe(
-        "my-part.wind",
-      );
-    });
-
-    it("returns the input when there is no separator", () => {
-      expect(formatRecentFileName("nopath.wind")).toBe("nopath.wind");
-    });
-
-    it("returns input when path is empty string", () => {
-      expect(formatRecentFileName("")).toBe("");
-    });
-  });
-
-  describe("formatRecentFilePath()", () => {
-    it("returns the directory portion of a Unix path", () => {
-      expect(formatRecentFilePath("/home/user/project/my-part.wind")).toBe(
-        "/home/user/project",
-      );
-    });
-
-    it("returns / when only a filename is provided", () => {
-      expect(formatRecentFilePath("file.wind")).toBe("/");
-    });
-  });
 });

@@ -4,7 +4,6 @@ import {
   type HoopLayer as GUIHoopLayer,
   type HelicalLayer as GUIHelicalLayer,
   type SkipLayer as GUISkipLayer,
-  type FiberPathProject,
 } from "./project";
 import type {
   WindDefinition,
@@ -141,29 +140,5 @@ export function windDefinitionToDocument(windDef: WindDefinition): ProjectDocume
     },
     layers: windDef.layers.map(convertWindSchemaToLayer),
     defaultFeedRate: windDef.defaultFeedRate,
-  };
-}
-
-/**
- * Convert .wind definition format to GUI project format
- */
-export function windDefinitionToProject(
-  windDef: WindDefinition,
-  filePath: string | null = null,
-): FiberPathProject {
-  return {
-    filePath,
-    isDirty: false,
-    mandrel: {
-      diameter: windDef.mandrelParameters.diameter,
-      wind_length: windDef.mandrelParameters.windLength,
-    },
-    tow: {
-      width: windDef.towParameters.width,
-      thickness: windDef.towParameters.thickness,
-    },
-    layers: windDef.layers.map(convertWindSchemaToLayer),
-    defaultFeedRate: windDef.defaultFeedRate,
-    activeLayerId: null,
   };
 }

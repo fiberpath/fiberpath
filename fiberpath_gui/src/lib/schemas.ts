@@ -137,16 +137,6 @@ export function validateData<T>(
   return result.data;
 }
 
-/**
- * Type guard to check if data matches schema
- */
-export function isValidData<T>(
-  schema: z.ZodType<T>,
-  data: unknown,
-): data is T {
-  return schema.safeParse(data).success;
-}
-
 // ===========================
 // Custom Error Classes
 // ===========================
