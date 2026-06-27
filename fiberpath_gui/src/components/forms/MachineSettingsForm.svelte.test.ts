@@ -8,9 +8,9 @@ beforeEach(() => {
 });
 
 describe("MachineSettingsForm.svelte", () => {
-  it("renders the Machine Settings heading", () => {
+  it("renders its fields", () => {
     render(MachineSettingsForm);
-    expect(screen.getByText("Machine Settings")).toBeInTheDocument();
+    expect(screen.getByText("Default Feed Rate")).toBeInTheDocument();
   });
 
   it("shows the current feed rate from the session", () => {

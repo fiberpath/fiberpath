@@ -8,9 +8,9 @@ beforeEach(() => {
 });
 
 describe("MandrelForm.svelte", () => {
-  it("renders the Mandrel Parameters heading", () => {
+  it("renders its fields", () => {
     render(MandrelForm);
-    expect(screen.getByText("Mandrel Parameters")).toBeInTheDocument();
+    expect(screen.getByText("Diameter")).toBeInTheDocument();
   });
 
   it("shows the current diameter from the session", () => {

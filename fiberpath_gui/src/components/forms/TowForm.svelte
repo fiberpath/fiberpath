@@ -40,7 +40,6 @@
 </script>
 
 <div class="param-form">
-  <h3 class="param-form__title">Tow Parameters</h3>
 
   <NumberField
     id="tow-width"

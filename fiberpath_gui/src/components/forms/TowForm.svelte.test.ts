@@ -8,9 +8,9 @@ beforeEach(() => {
 });
 
 describe("TowForm.svelte", () => {
-  it("renders the Tow Parameters heading", () => {
+  it("renders its fields", () => {
     render(TowForm);
-    expect(screen.getByText("Tow Parameters")).toBeInTheDocument();
+    expect(screen.getByText("Width")).toBeInTheDocument();
   });
 
   it("shows the current width and thickness from the session", () => {

@@ -38,7 +38,6 @@
 </script>
 
 <div class="param-form">
-  <h3 class="param-form__title">Machine Settings</h3>
 
   <NumberField
     id="defaultFeedRate"

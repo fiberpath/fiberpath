@@ -31,6 +31,6 @@ describe("StatusBar.svelte", () => {
   it("shows the dirty marker after a mutation", () => {
     projectSession.updateMandrel({ diameter: 99 });
     render(StatusBar);
-    expect(screen.getByTitle("Unsaved changes")).toBeInTheDocument();
+    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
   });
 });

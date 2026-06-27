@@ -24,21 +24,23 @@
 <style>
   .tabs {
     display: flex;
-    gap: 2px;
+    gap: var(--spacing-xs);
     align-items: stretch;
-    height: 2rem;
+    height: 2.25rem;
     padding: 0 var(--spacing-sm);
     background: var(--color-bg-panel);
     border-bottom: 1px solid var(--color-border);
   }
+  /* Tabs are the workspace anchor — larger than the menubar's chrome so the eye
+     lands here first; the active tab is a filled segment with a teal underline. */
   .tabs__tab {
     appearance: none;
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
-    padding: 0 var(--spacing-md);
+    padding: 0 var(--spacing-lg);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: var(--transition-colors);
@@ -49,6 +51,8 @@
   }
   .tabs__tab--active {
     color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    background: var(--color-bg-panel-alt);
     border-bottom-color: var(--color-primary);
   }
 </style>
