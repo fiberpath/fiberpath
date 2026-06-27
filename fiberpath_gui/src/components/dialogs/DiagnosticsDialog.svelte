@@ -19,7 +19,7 @@
   {/snippet}
 
   <div class="diagnostics-section">
-    <h3>CLI Status</h3>
+    <h3 class="section-eyebrow">Backend Status</h3>
     <div class="diagnostics-grid">
       <div class="diagnostics-item">
         <span class="diagnostics-label">Health:</span>
@@ -45,12 +45,12 @@
       {/if}
     </div>
     <button class="btn btn--secondary diagnostics-refresh-btn" onclick={() => backendHealth.refresh()}>
-      Refresh CLI Status
+      Refresh Backend Status
     </button>
   </div>
 
   <div class="diagnostics-section">
-    <h3>Project Status</h3>
+    <h3 class="section-eyebrow">Project Status</h3>
     <div class="diagnostics-grid">
       <div class="diagnostics-item">
         <span class="diagnostics-label">File Path:</span>
@@ -70,7 +70,7 @@
   </div>
 
   <div class="diagnostics-section">
-    <h3>Application Data</h3>
+    <h3 class="section-eyebrow">Application Data</h3>
     <div class="diagnostics-grid">
       <div class="diagnostics-item">
         <span class="diagnostics-label">Recent Files:</span>
@@ -84,7 +84,7 @@
   </div>
 
   <div class="diagnostics-section">
-    <h3>System Information</h3>
+    <h3 class="section-eyebrow">System Information</h3>
     <div class="diagnostics-grid">
       <div class="diagnostics-item">
         <span class="diagnostics-label">Platform:</span>

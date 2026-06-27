@@ -20,7 +20,7 @@
 
 <div class="log">
   <header class="log__header">
-    <h3 class="log__title">Output Log</h3>
+    <h3 class="section-eyebrow">Output Log</h3>
     <div class="log__actions">
       <button
         class="icon-btn"
@@ -60,17 +60,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 1.75rem;
+    height: var(--input-height-sm);
     padding: 0 var(--spacing-md);
     background: var(--color-bg-panel-alt);
     border-bottom: 1px solid var(--color-border);
-  }
-  .log__title {
-    margin: 0;
-    font-size: var(--font-size-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-text-muted);
   }
   .log__actions {
     display: flex;

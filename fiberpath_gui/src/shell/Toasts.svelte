@@ -30,7 +30,7 @@
         <span class="toast__icon" aria-hidden="true">{symbol(toast.type)}</span>
         <span class="toast__message">{toast.message}</span>
         <button
-          class="toast__close"
+          class="icon-btn"
           aria-label="Close notification"
           onclick={() => notifications.dismiss(toast.id)}>×</button
         >
@@ -95,19 +95,8 @@
   .toast[data-type="info"] .toast__icon {
     color: var(--status-info-fg);
   }
-  .toast__close {
+  /* Close uses the shared .icon-btn system (buttons.css); only nudge layout. */
+  .toast .icon-btn {
     flex-shrink: 0;
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    font-size: var(--font-size-lg);
-    line-height: 1;
-    padding: 0 var(--spacing-xs);
-    transition: var(--transition-colors);
-  }
-  .toast__close:hover {
-    color: var(--color-text);
   }
 </style>

@@ -13,7 +13,7 @@
 
 <section class="section">
   <header class="section__header">
-    <h2 class="section__title">{title}</h2>
+    <h2 class="section-eyebrow">{title}</h2>
     {#if action}<div class="section__action">{@render action()}</div>{/if}
   </header>
   <div class="section__body">
@@ -29,17 +29,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 1.75rem;
+    height: var(--input-height-sm);
     padding: 0 var(--spacing-md);
     border-bottom: 1px solid var(--color-border-soft);
-  }
-  .section__title {
-    margin: 0;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-text);
   }
   .section__body {
     padding: var(--spacing-md);

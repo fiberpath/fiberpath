@@ -73,7 +73,7 @@
     {#if showPicker}
       <div class="picker" role="menu">
         {#each TYPES as t (t.type)}
-          <button class="picker__opt" role="menuitem" onclick={() => addLayer(t.type)}>
+          <button class="menu-item" role="menuitem" onclick={() => addLayer(t.type)}>
             <span class="picker__icon">{t.icon}</span>{t.label}
           </button>
         {/each}
@@ -163,23 +163,7 @@
     border-radius: var(--border-radius-md);
     box-shadow: var(--shadow-lg);
   }
-  .picker__opt {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--color-text);
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    border-radius: var(--border-radius-sm);
-    cursor: pointer;
-    text-align: left;
-  }
-  .picker__opt:hover {
-    background: var(--color-bg-hover);
-  }
+  /* Picker options use the shared .menu-item class (buttons.css). */
   .picker__icon {
     width: 1rem;
     text-align: center;

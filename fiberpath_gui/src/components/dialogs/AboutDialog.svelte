@@ -38,8 +38,8 @@
   <div class="about-section">
     <h4>Links</h4>
     <div class="about-links">
-      <button class="link-button" onclick={link("https://fiberpath.org/fiberpath")}>📚 Documentation</button>
-      <button class="link-button" onclick={link("https://github.com/fiberpath/fiberpath")}>💻 GitHub Repository</button>
+      <button class="btn btn--secondary btn--block btn--start" onclick={link("https://fiberpath.org/fiberpath")}>📚 Documentation</button>
+      <button class="btn btn--secondary btn--block btn--start" onclick={link("https://github.com/fiberpath/fiberpath")}>💻 GitHub Repository</button>
     </div>
   </div>
 

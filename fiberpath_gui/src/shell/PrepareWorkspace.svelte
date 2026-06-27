@@ -10,6 +10,7 @@
   import HelicalLayerEditor from "../components/editors/HelicalLayerEditor.svelte";
   import SkipLayerEditor from "../components/editors/SkipLayerEditor.svelte";
   import Viewport from "../components/canvas/Viewport.svelte";
+  import EmptyState from "../ui/EmptyState.svelte";
 
   const selected = $derived(projectSession.selectedLayer);
 </script>
@@ -47,7 +48,7 @@
         {:else if selected?.type === "skip"}
           <SkipLayerEditor layerId={selected.id} />
         {:else}
-          <p class="placeholder">Select a layer to edit its properties.</p>
+          <EmptyState title="No layer selected" hint="Select a layer to edit its properties." />
         {/if}
       </InspectorSection>
     </aside>
@@ -84,10 +85,5 @@
     background: var(--color-bg);
     min-width: 0;
     overflow: hidden;
-  }
-  .placeholder {
-    margin: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
   }
 </style>

@@ -61,6 +61,11 @@ button:focus-visible {
   width: 100%;
 }
 
+/* Left-align contents instead of centering (e.g. list-style link buttons). */
+.btn--start {
+  justify-content: flex-start;
+}
+
 /* Primary Button */
 .btn--primary {
   background: var(--color-primary);
@@ -167,4 +172,39 @@ button:focus-visible {
 
 .icon-btn--active {
   color: var(--color-primary-soft);
+}
+
+/* Larger icon button for prominent glyph controls (e.g. dialog close ×). */
+.icon-btn--lg {
+  width: var(--spacing-2xl);
+  height: var(--spacing-2xl);
+  border-radius: var(--border-radius-md);
+  font-size: 1.5rem;
+}
+
+/* Menu item — shared row for dropdown/popover menus (menubar, Add-Layer picker).
+   Flex base supports both text-only and icon+text items. */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.menu-item:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -55,33 +55,7 @@
   color: var(--color-text);
 }
 
-.dialog-close {
-  width: var(--spacing-2xl);
-  height: var(--spacing-2xl);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--border-radius-md);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1.75rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: var(--transition-colors);
-}
-
-.dialog-close:hover {
-  background: var(--color-bg-hover);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-.dialog-close:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
-}
+/* Dialog close uses the shared .icon-btn .icon-btn--lg system (see buttons.css). */
 
 .dialog-body {
   flex: 1;
@@ -151,26 +125,6 @@
   gap: var(--spacing-sm);
 }
 
-.link-button {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-md);
-  background: var(--color-bg-panel-alt);
-  color: var(--color-text);
-  font-size: var(--font-size-base);
-  text-align: left;
-  cursor: pointer;
-  transition: var(--transition-colors);
-}
-
-.link-button:hover {
-  background: var(--color-bg-hover);
-  border-color: var(--color-primary);
-}
-
 .about-footer {
   text-align: center;
   padding-top: var(--spacing-lg);
@@ -193,13 +147,10 @@
   margin-bottom: 0;
 }
 
+/* Title uses the shared .section-eyebrow (typography.css); only the spacing
+   below it is diagnostics-specific. */
 .diagnostics-section h3 {
-  margin: 0 0 var(--spacing-lg);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text);
+  margin-bottom: var(--spacing-lg);
 }
 
 .diagnostics-grid {

@@ -76,7 +76,7 @@
     display: block;
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
-    margin-bottom: 2px;
+    margin-bottom: var(--spacing-xs);
   }
   .row {
     display: flex;

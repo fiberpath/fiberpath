@@ -73,7 +73,7 @@
   >
     <div class="dialog-header">
       <h2 id={titleId}>{title}</h2>
-      <button class="dialog-close" aria-label="Close" onclick={onclose}>×</button>
+      <button class="icon-btn icon-btn--lg" aria-label="Close" onclick={onclose}>×</button>
     </div>
     <div class="dialog-body">{@render children()}</div>
     {#if footer}<div class="dialog-footer">{@render footer()}</div>{/if}

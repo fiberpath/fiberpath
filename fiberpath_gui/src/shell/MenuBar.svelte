@@ -119,7 +119,7 @@
           {#each menu.items as item (item.label)}
             {#if item.separatorBefore}<div class="menubar__sep" role="separator"></div>{/if}
             <button
-              class="menubar__item"
+              class="menu-item"
               role="menuitem"
               disabled={item.disabled}
               title={item.hint ?? ""}
@@ -180,27 +180,7 @@
     box-shadow: var(--shadow-md);
     z-index: var(--z-index-dropdown);
   }
-  .menubar__item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--color-text);
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    border-radius: var(--border-radius-sm);
-    cursor: pointer;
-  }
-  .menubar__item:hover:not(:disabled) {
-    background: var(--color-bg-hover);
-  }
-  .menubar__item:disabled {
-    color: var(--color-text-muted);
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  /* Dropdown items use the shared .menu-item class (buttons.css). */
   .menubar__sep {
     height: 1px;
     margin: var(--spacing-xs) 0;
