@@ -21,8 +21,8 @@ performs compute itself.
 
 ```text
 ┌─────────────────────────────────────┐
-│  React Components                   │  User interactions
-│  (PlanForm, PlotPanel, Stream tab)  │
+│  Svelte components                  │  User interactions
+│  (forms, Viewport, machine panels)  │
 └─────────────┬───────────────────────┘
               │ TypeScript functions
               ▼

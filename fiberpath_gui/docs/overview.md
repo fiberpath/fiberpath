@@ -2,7 +2,12 @@
 
 ## What is FiberPath GUI?
 
-FiberPath GUI is a cross-platform desktop application for planning, visualizing, and executing filament winding patterns. Built with React and Tauri, it provides an intuitive interface for working with the FiberPath CLI backend.
+FiberPath GUI is a cross-platform desktop application for planning, visualizing, and executing filament winding patterns. Built with **Svelte 5** and Tauri, it provides an intuitive interface for working with the FiberPath backend. (The frontend was migrated from React — see the [React → Svelte Migration ADR](architecture/react-to-svelte-migration.md).)
+
+The workspace is organized into two top-level areas:
+
+- **Prepare** — configure the mandrel/tow/machine, design hoop/helical/skip layers, and preview the toolpath.
+- **Machine** — connect to a Marlin board, send manual commands, and stream G-code.
 
 ## Core Capabilities
 
@@ -49,8 +54,8 @@ Direct hardware control for Marlin-compatible machines:
 
 ```text
 ┌──────────────────┐
-│  React Frontend  │  TypeScript + Vite
-│  (UI Panels)     │  Zustand state management
+│ Svelte 5 Frontend│  TypeScript + Vite
+│  (UI Panels)     │  runes state ($state/$derived)
 └───┬──────────┬───┘
     │ HTTP     │ invoke()
     ▼          ▼
@@ -75,12 +80,12 @@ Either way, all the heavy lifting stays in the battle-tested Python backend. See
 
 ## Technology Stack
 
-- **Frontend:** React 19, TypeScript 6, Vite 8
+- **Frontend:** Svelte 5 (runes), TypeScript 6, Vite 8 (plain SPA — no SvelteKit)
 - **Desktop Shell:** Tauri 2.x (Rust)
-- **State Management:** Zustand with shallow selectors
+- **State Management:** Svelte runes (`$state` / `$derived`) in `src/state/*.svelte.ts`
 - **Validation:** Zod runtime schemas
-- **Styling:** Global CSS organized by feature/domain with design tokens
-- **Testing:** Vitest, React Testing Library
+- **Styling:** Global CSS design tokens + component-scoped `<style>`
+- **Testing:** Vitest, @testing-library/svelte (`svelte-check` for type-checking `.svelte`)
 
 ## Key Features
 
@@ -92,9 +97,10 @@ Either way, all the heavy lifting stays in the battle-tested Python backend. See
 
 ### Optimized Performance
 
-- Shallow selectors prevent unnecessary re-renders
-- Memoized computations for expensive operations
+- Svelte's compiler-tracked fine-grained reactivity — no manual selector/memo glue
+- Derived values (`$derived`) recompute only when their inputs change
 - Debounced preview updates for smooth interaction
+- Production JS bundle ~308 KB (≈48% smaller than the former React build)
 
 ### Robust Error Handling
 
@@ -141,6 +147,7 @@ See [development.md](development.md) for detailed setup instructions.
   - [State Management](architecture/state-management.md)
   - [CLI Integration](architecture/cli-integration.md)
   - [Streaming State](architecture/streaming-state.md)
+  - [React → Svelte Migration (ADR)](architecture/react-to-svelte-migration.md)
 - **Guides** - How-to documentation for developers
   - [Schemas](guides/schemas.md)
   - [Styling](guides/styling.md)
@@ -153,12 +160,17 @@ See [development.md](development.md) for detailed setup instructions.
 ```sh
 fiberpath_gui/
 ├── src/
-│   ├── components/       # React components (Plan, Plot, Simulate, Stream tabs)
-│   ├── stores/           # Zustand stores (project, stream, toast)
-│   ├── lib/              # Utilities (commands, schemas, validation)
+│   ├── App.svelte        # App shell (Prepare/Machine workspaces)
+│   ├── shell/            # Menu bar, workspaces, status bar, drawer, toasts
+│   ├── components/       # Svelte feature components (forms, editors, layers, canvas, machine, dialogs)
+│   ├── state/            # Runes state modules (*.svelte.ts: project-session, machine-session, …)
+│   ├── services/         # Side-effecting services (file operations)
+│   ├── ui/               # Small shared primitives (NumberField, Dialog, …)
+│   ├── lib/              # Framework-agnostic utilities (commands, schemas, validation, panzoom)
+│   ├── api/              # OpenAPI-generated client + types
 │   ├── types/            # TypeScript types
 │   ├── styles/           # Global CSS + design tokens
-│   └── tests/            # Test files
+│   └── tests/            # Test setup
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs        # Tauri commands (files, health, Marlin) + setup

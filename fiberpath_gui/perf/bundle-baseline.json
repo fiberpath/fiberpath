@@ -1,11 +1,11 @@
 {
-  "capturedAt": "2026-04-07",
-  "source": "planning/gui-framework-migration-evaluation-plan.md",
+  "capturedAt": "2026-06-26",
+  "source": "React->Svelte 5 migration cutover (epic #214, #221)",
   "maxRegressionPercent": 15,
-  "absoluteJsBudgetBytes": 750000,
-  "absoluteCssBudgetBytes": 90000,
+  "absoluteJsBudgetBytes": 400000,
+  "absoluteCssBudgetBytes": 80000,
   "baseline": {
-    "totalJsBytes": 598960,
-    "totalCssBytes": 59420
+    "totalJsBytes": 308644,
+    "totalCssBytes": 64236
   }
 }

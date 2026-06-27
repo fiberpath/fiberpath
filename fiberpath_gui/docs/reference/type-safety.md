@@ -422,11 +422,11 @@ const data = MandrelParametersSchema.parse(response);
 
 ```typescript
 // When you know value is not null
-const project = useProjectStore((s) => s.project);
-const diameter = project!.mandrelParameters.diameter;
-// ⚠️ Dangerous: Runtime error if project is null
+const layer = projectSession.selectedLayer;
+const angle = layer!.helical.wind_angle;
+// ⚠️ Dangerous: Runtime error if no layer is selected
 // ✅ Prefer optional chaining
-const diameter = project?.mandrelParameters.diameter;
+const angle = layer?.helical?.wind_angle;
 ```
 
 ## Type Narrowing

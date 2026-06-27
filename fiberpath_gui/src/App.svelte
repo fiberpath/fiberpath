@@ -1,10 +1,7 @@
 <script lang="ts">
-  // The Svelte app shell. Unlike the React `App`, which assembled every region as
-  // element trees and threaded them through `MainTab` as four `ReactNode` props,
-  // each region is a component that owns its own layout here.
-  //
-  // index.html keeps mounting React until the #221 cutover; this is reachable via
-  // the dev-only index.svelte.html entry.
+  // The Svelte app shell: each region is a component that owns its own layout
+  // (the former React `App` assembled element trees and threaded them through
+  // `MainTab` as four `ReactNode` props).
   import MenuBar from "./shell/MenuBar.svelte";
   import WorkspaceTabs from "./shell/WorkspaceTabs.svelte";
   import StatusBar from "./shell/StatusBar.svelte";

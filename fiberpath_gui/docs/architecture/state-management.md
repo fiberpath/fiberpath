@@ -1,468 +1,265 @@
 # State Management Architecture
 
-Complete guide to Zustand state management in FiberPath GUI.
+Complete guide to state management in FiberPath GUI using Svelte 5 runes.
 
 ## Overview
 
-FiberPath GUI uses **Zustand** for centralized state management with a single store architecture. All project data, UI state, and metadata are managed through `projectStore.ts`.
+FiberPath GUI manages state with **Svelte 5 reactive classes** (runes), not a
+store library. Each concern is a class in `src/state/*.svelte.ts` exported as an
+app-wide singleton. Components import a singleton and read its `$state`/`$derived`
+fields directly; reads inside a component or a `$derived` subscribe to exactly
+the values touched, so updates are fine-grained without selectors.
 
-## Why Single Store?
+## The state modules
 
-**Rationale:**
+| Singleton        | Module                              | Responsibility                                                      |
+| ---------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| `projectSession` | `project-session.svelte.ts`         | The open project: persisted `ProjectDocument` + transient session  |
+| `uiState`        | `ui-state.svelte.ts`                | Shell UI (active workspace, panel/drawer visibility, open dialog)  |
+| `machineSession` | `machine-session.svelte.ts`         | Marlin connection, streaming, manual control, log                  |
+| `previewSession` | `preview-session.svelte.ts`         | Toolpath preview generation (plan → PNG) with stale-request guard  |
+| `notifications`  | `notifications.svelte.ts`           | Transient toast notifications                                      |
+| `theme`          | `theme.svelte.ts`                   | Theme preference + system resolution                              |
+| `cliHealth`      | `cli-health.svelte.ts`              | Backend/CLI health polling                                        |
 
-- GUI is project-centric (one project open at a time)
-- No complex cross-entity relationships
-- Simpler reasoning about state flow
-- No store coordination overhead
+Logic that used to live in React custom hooks now lives in these modules, in
+plain service functions (`src/services/*`), or in component event handlers.
 
-**Alternative Considered:**
-Split stores (projectStore, uiStore, streamStore) were analyzed but rejected because:
+## Persisted vs. transient: `ProjectSession`
 
-- Increased synchronization complexity
-- No performance benefit at current scale
-- Harder to reason about state dependencies
+The biggest design point is the split between what round-trips to a `.wind` file
+and what is session-only.
 
-See `fiberpath_gui/docs-old/STORE_SPLITTING_ANALYSIS.md` for historical analysis.
+### `ProjectDocument` (persisted)
 
-## Store Structure
-
-### State Schema
-
-```typescript
-interface ProjectState {
-  // Project data
-  project: FiberPathProject;
-  // Project management
-  loadProject: (project: FiberPathProject) => void;
-  newProject: () => void;
-  // Mandrel & Tow
-  updateMandrel: (mandrel: Partial<Mandrel>) => void;
-  updateTow: (tow: Partial<Tow>) => void;
-  // Machine settings
-  updateDefaultFeedRate: (feedRate: number) => void;
-  // Layer operations
-  addLayer: (type: LayerType) => string;
-  removeLayer: (id: string) => void;
-  updateLayer: (id: string, props: Partial<Layer>) => void;
-  reorderLayers: (startIndex: number, endIndex: number) => void;
-  duplicateLayer: (id: string) => string;
-  // UI state
-  setActiveLayerId: (id: string | null) => void;
-  // Dirty state
-  markDirty: () => void;
-  clearDirty: () => void;
-  // File metadata
-  setFilePath: (path: string | null) => void;
-}
-```
-
-### FiberPathProject Type
+`ProjectDocument` (`src/types/document.ts`) is a plain domain type — no Svelte —
+so the tsc-checked modules (converters, services) and the runes session can share
+it. It is **exactly** the `.wind` payload:
 
 ```typescript
-interface FiberPathProject {
-  schemaVersion: "1.0";
-  mandrel: Mandrel;
-  tow: Tow;
-  defaultFeedRate: number;
+export interface ProjectDocument {
+  mandrel: Mandrel; // { diameter, wind_length }
+  tow: Tow; // { width, thickness }
   layers: Layer[];
-  activeLayerId: string | null;
-  isDirty: boolean;
-  filePath: string | null;
+  defaultFeedRate: number;
 }
 ```
 
-## Store Creation
+No `filePath`, `isDirty`, or selection lives in the document.
 
-### Definition (`src/stores/projectStore.ts`)
-
-```typescript
-import { create } from "zustand";
-import { devtools } from "zustand/middleware";
-export const useProjectStore = create<ProjectState>()(
-  devtools(
-    (set, get) => ({
-      project: createEmptyProject(),
-      loadProject: (project) => {
-        set({ project });
-      },
-      newProject: () => {
-        set({ project: createEmptyProject() });
-      },
-      updateMandrel: (mandrel) => {
-        set((state) => ({
-          project: {
-            ...state.project,
-            mandrel: { ...state.project.mandrel, ...mandrel },
-            isDirty: true,
-          },
-        }));
-      },
-      // ...more actions
-    }),
-    { name: "ProjectStore" } // DevTools name
-  )
-);
-```
-
-**Key Points:**
-
-- `create()()` double-call syntax for middleware
-- `devtools()` enables Redux DevTools integration
-- `set()` accepts updater function for derived state
-- `get()` available for accessing current state in actions
-
-## Usage Patterns
-
-### Component Access
-
-#### ❌ Bad: Entire State
+### Session wrapper (transient)
 
 ```typescript
-function PlanForm() {
-  const state = useProjectStore();  // Re-renders on ANY state change
-  return <input value={state.project.mandrel.diameter} />;
-}
-```
+export class ProjectSession {
+  document = $state<ProjectDocument>(createEmptyDocument());
+  filePath = $state<string | null>(null);
+  selectedLayerId = $state<string | null>(null);
+  validationErrors = $state<UiValidationErrors>({});
 
-**Problem:** Component re-renders when unrelated state changes (e.g., active layer).
+  /** Bumped on every document mutation; compared against savedRevision. */
+  revision = $state(0);
+  savedRevision = $state(0);
 
-#### ✅ Good: Shallow Selector
+  readonly isDirty = $derived(this.revision !== this.savedRevision);
 
-```typescript
-import { shallow } from "zustand/shallow";
-function PlanForm() {
-  const mandrel = useProjectStore(
-    (state) => state.project.mandrel,
-    shallow
-  );
-  return <input value={mandrel.diameter} />;
-}
-```
-
-**Benefit:** Re-renders only when `mandrel` object changes (reference equality).
-
-#### ✅ Better: Primitive Selector
-
-```typescript
-function DiameterInput() {
-  const diameter = useProjectStore(
-    (state) => state.project.mandrel.diameter
-  );
-  return <input value={diameter} />;
-}
-```
-
-**Benefit:** Re-renders only when `diameter` value changes.
-
-#### ✅ Best: Multiple Selectors
-
-```typescript
-function PlanForm() {
-  const diameter = useProjectStore((s) => s.project.mandrel.diameter);
-  const windLength = useProjectStore((s) => s.project.mandrel.windLength);
-  const updateMandrel = useProjectStore((s) => s.updateMandrel);
-  return (
-    <>
-      <input value={diameter} onChange={(e) => updateMandrel({ diameter: +e.target.value })} />
-      <input value={windLength} onChange={(e) => updateMandrel({ windLength: +e.target.value })} />
-    </>
+  readonly selectedLayer = $derived(
+    this.document.layers.find((l) => l.id === this.selectedLayerId) ?? null,
   );
 }
+
+export const projectSession = new ProjectSession();
 ```
 
-**Benefit:** Each input re-renders independently.
+### Revision-based dirty tracking
 
-### Action Patterns
-
-#### Update Partial State
+Instead of setting `isDirty: true` in every action (easy to forget), dirtiness is
+**derived**: each document mutation bumps `revision`, and `isDirty` is
+`revision !== savedRevision`. Saving calls `markSaved()`, which sets
+`savedRevision = revision`. Loading a document resets both to `0`.
 
 ```typescript
-updateMandrel: (mandrel: Partial<Mandrel>) => {
-  set((state) => ({
-    project: {
-      ...state.project,
-      mandrel: { ...state.project.mandrel, ...mandrel },
-      isDirty: true,
-    },
-  }));
-};
+markSaved() {
+  this.savedRevision = this.revision;
+}
+
+loadDocument(document: ProjectDocument, filePath: string | null = null) {
+  this.document = document;
+  this.filePath = filePath;
+  this.selectedLayerId = null;
+  this.validationErrors = {};
+  this.revision = 0;
+  this.savedRevision = 0;
+}
 ```
 
-**Pattern:** Spread existing state + new values. Always mark `isDirty`.
+## Mutating state
 
-#### Add to Array
+Because `$state` is deeply reactive, methods mutate in place and bump the
+revision — no spread-and-replace dance.
+
+### Update partial state
 
 ```typescript
-addLayer: (type: LayerType) => {
-  const newLayer = createLayer(type);
-  set((state) => ({
-    project: {
-      ...state.project,
-      layers: [...state.project.layers, newLayer],
-      activeLayerId: newLayer.id,
-      isDirty: true,
-    },
-  }));
-  return newLayer.id;
-};
+updateMandrel(patch: Partial<Mandrel>) {
+  Object.assign(this.document.mandrel, patch);
+  this.revision++;
+}
 ```
 
-**Pattern:** Spread existing array + new item. Return new ID for UI.
-
-#### Remove from Array
+### Add to array
 
 ```typescript
-removeLayer: (id: string) => {
-  set((state) => {
-    const layers = state.project.layers.filter((l) => l.id !== id);
-    const activeLayerId =
-      state.project.activeLayerId === id
-        ? layers.length > 0
-          ? layers[0].id
-          : null
-        : state.project.activeLayerId;
-    return {
-      project: {
-        ...state.project,
-        layers,
-        activeLayerId,
-        isDirty: true,
-      },
-    };
+addLayer(type: LayerType): string {
+  const layer = createLayer(type);
+  this.document.layers.push(layer);
+  this.selectedLayerId = layer.id;
+  this.revision++;
+  return layer.id;
+}
+```
+
+`push` is observed directly. The new ID is returned for the UI. Selection is
+session-only, so changing it alone does **not** bump the revision.
+
+### Remove from array
+
+```typescript
+removeLayer(id: string) {
+  const index = this.document.layers.findIndex((l) => l.id === id);
+  if (index === -1) return;
+  this.document.layers.splice(index, 1);
+  if (this.selectedLayerId === id) {
+    this.selectedLayerId = this.document.layers[0]?.id ?? null;
+  }
+  this.revision++;
+}
+```
+
+### Reorder array
+
+```typescript
+reorderLayers(from: number, to: number) {
+  const layers = this.document.layers;
+  if (from === to) return;
+  const [moved] = layers.splice(from, 1);
+  layers.splice(to, 0, moved);
+  this.revision++;
+}
+```
+
+## Usage in components
+
+A component reads the singleton's reactive fields. Wrapping a read in `$derived`
+makes it track that value and nothing else.
+
+```svelte
+<script lang="ts">
+  import { projectSession } from "../../state/project-session.svelte";
+
+  const mandrel = $derived(projectSession.document.mandrel);
+</script>
+
+<input
+  value={mandrel.diameter}
+  oninput={(e) => projectSession.updateMandrel({ diameter: +e.currentTarget.value })}
+/>
+```
+
+Two inputs reading two different fields update independently — the compiler
+tracks the dependencies, so there is no selector and no shallow-comparison helper
+to reach for. Derived values like `projectSession.selectedLayer` and
+`projectSession.isDirty` recompute only when their inputs change.
+
+## Transient UI state: `UiState`
+
+Shell chrome that should never be saved lives in its own singleton — what was a
+scatter of `useState` flags in the React `App`:
+
+```typescript
+export class UiState {
+  workspace = $state<WorkspaceId>("prepare"); // "prepare" | "machine"
+  leftCollapsed = $state(false);
+  rightCollapsed = $state(false);
+  drawerOpen = $state(false);
+  activeDialog = $state<"about" | "diagnostics" | null>(null);
+
+  setWorkspace(id: WorkspaceId) {
+    this.workspace = id;
+  }
+  toggleLeft() {
+    this.leftCollapsed = !this.leftCollapsed;
+  }
+}
+
+export const uiState = new UiState();
+```
+
+## Derived state
+
+Prefer `$derived` over recomputing in markup or methods:
+
+```typescript
+readonly isHealthy = $derived(this.status === "ready");
+readonly canStartStream = $derived(Boolean(this.filePath) && this.isConnected);
+```
+
+For one-off display values, deriving inline in the component is fine; for values
+reused by methods, declare a `$derived` field on the class.
+
+## Testing state
+
+Each singleton's class is exported so tests can instantiate a fresh, isolated
+instance — no global reset hook needed:
+
+```typescript
+import { describe, it, expect, beforeEach } from "vitest";
+import { ProjectSession, createEmptyDocument } from "./project-session.svelte";
+
+describe("ProjectSession", () => {
+  let session: ProjectSession;
+  beforeEach(() => {
+    session = new ProjectSession();
   });
-};
-```
 
-**Pattern:** Filter array + update related state (active selection).
-
-#### Reorder Array
-
-```typescript
-reorderLayers: (startIndex: number, endIndex: number) => {
-  set((state) => {
-    const layers = [...state.project.layers];
-    const [removed] = layers.splice(startIndex, 1);
-    layers.splice(endIndex, 0, removed);
-    return {
-      project: {
-        ...state.project,
-        layers,
-        isDirty: true,
-      },
-    };
+  it("is not dirty until a mutation, then dirty until saved", () => {
+    expect(session.isDirty).toBe(false);
+    session.updateMandrel({ diameter: 200 });
+    expect(session.isDirty).toBe(true);
+    session.markSaved();
+    expect(session.isDirty).toBe(false);
   });
-};
+});
 ```
 
-**Pattern:** Clone array, mutate clone, replace in state.
-
-### Computed Values
-
-#### In Component
+Component tests drive the shared singleton and reset it in `beforeEach`:
 
 ```typescript
-function LayerCount() {
-  const layerCount = useProjectStore((s) => s.project.layers.length);
-  return <div>Total Layers: {layerCount}</div>;
-}
-```
-
-**When:** Simple derivation, used in one place.
-
-#### In Selector
-
-```typescript
-const useLayerCount = () =>
-  useProjectStore((s) => s.project.layers.length);
-function LayerCount() {
-  const count = useLayerCount();
-  return <div>Total Layers: {count}</div>;
-}
-```
-
-**When:** Reused across multiple components.
-
-#### In Store (if complex)
-
-```typescript
-getHelicalLayers: () => {
-  const { project } = get();
-  return project.layers.filter((l) => l.type === "helical");
-};
-```
-
-**When:** Complex computation, needs store access.
-
-## Testing Store
-
-### Reset Before Each Test
-
-```typescript
-import { beforeEach } from "vitest";
-import { useProjectStore } from "./projectStore";
+import { projectSession } from "../../state/project-session.svelte";
 beforeEach(() => {
-  useProjectStore.setState({
-    project: createEmptyProject(),
-  });
+  projectSession.newDocument();
 });
 ```
-
-### Test Actions
-
-```typescript
-it("should update mandrel diameter", () => {
-  const store = useProjectStore.getState();
-  store.updateMandrel({ diameter: 200 });
-  expect(store.project.mandrel.diameter).toBe(200);
-  expect(store.project.isDirty).toBe(true);
-});
-```
-
-### Test Derived State
-
-```typescript
-it("should update active layer on removal", () => {
-  const store = useProjectStore.getState();
-  const layer1Id = store.addLayer("hoop");
-  const layer2Id = store.addLayer("helical");
-  store.setActiveLayerId(layer1Id);
-  store.removeLayer(layer1Id);
-  expect(store.project.activeLayerId).toBe(layer2Id);
-});
-```
-
-## DevTools Integration
-
-### Enable DevTools
-
-```typescript
-import { devtools } from "zustand/middleware";
-export const useProjectStore = create<ProjectState>()(
-  devtools(
-    (set, get) => ({
-      /* state */
-    }),
-    { name: "ProjectStore" }
-  )
-);
-```
-
-### Use in Browser
-
-1. Install Redux DevTools extension
-2. Run `npm run tauri dev`
-3. Open DevTools → Redux panel
-4. See all actions and state changes
-
-**Benefits:**
-
-- Time-travel debugging
-- Action replay
-- State inspection
-- Performance monitoring
-
-## Performance Optimization
-
-### Shallow Comparison
-
-```typescript
-import { shallow } from "zustand/shallow";
-const mandrel = useProjectStore((s) => s.project.mandrel, shallow);
-```
-
-**When:** Selecting object/array that recreates on every render.
-
-### Memoization
-
-```typescript
-import { useMemo } from "react";
-function LayerList() {
-  const layers = useProjectStore((s) => s.project.layers);
-  const sortedLayers = useMemo(
-    () => [...layers].sort((a, b) => a.index - b.index),
-    [layers]
-  );
-  return <div>{sortedLayers.map(/* render */)}</div>;
-}
-```
-
-**When:** Expensive computation on store data.
-
-### Splitting Selectors
-
-```typescript
-// ❌ Bad: One selector for multiple values
-const { mandrel, tow } = useProjectStore(
-  (s) => ({
-    mandrel: s.project.mandrel,
-    tow: s.project.tow,
-  }),
-  shallow
-);
-// ✅ Good: Separate selectors
-const mandrel = useProjectStore((s) => s.project.mandrel, shallow);
-const tow = useProjectStore((s) => s.project.tow, shallow);
-```
-
-**Benefit:** Independent re-render triggers.
-
-## Migration from Redux
-
-If coming from Redux:
-
-| Redux             | Zustand               |
-| ----------------- | --------------------- |
-| `useSelector`     | `useStore(selector)`  |
-| `useDispatch`     | Store action directly |
-| `mapStateToProps` | Multiple selectors    |
-| `combineReducers` | Single store          |
-| Actions           | Methods on store      |
-| Reducers          | `set()` calls         |
-| Middleware        | Zustand middleware    |
-| DevTools          | `devtools()` wrapper  |
 
 ## Common Pitfalls
 
-### ❌ Mutating State
+### Reading a singleton field non-reactively
 
-```typescript
-updateLayer: (id, props) => {
-  set((state) => {
-    const layer = state.project.layers.find((l) => l.id === id);
-    layer.props = { ...layer.props, ...props }; // Mutation!
-    return state;
-  });
-};
-```
+Destructuring a `$state` field into a local `const` at the top of `<script>`
+captures a snapshot. Wrap reads you want to stay live in `$derived` (or read
+`projectSession.document.x` directly in markup).
 
-**Fix:** Create new objects/arrays.
+### Putting transient state in the document
 
-### ❌ Selecting Too Much
+`ProjectDocument` is the `.wind` payload. Selection, dirtiness, file path, and UI
+flags belong on the session/`UiState`, not in the document.
 
-```typescript
-const project = useProjectStore((s) => s.project); // Entire project
-```
+### Forgetting the revision bump
 
-**Fix:** Select only what you need.
-
-### ❌ Missing Dirty Flag
-
-```typescript
-updateMandrel: (mandrel) => {
-  set((state) => ({
-    project: {
-      ...state.project,
-      mandrel: { ...state.project.mandrel, ...mandrel },
-      // Missing isDirty: true
-    },
-  }));
-};
-```
-
-**Fix:** Always set `isDirty: true` on mutations.
+Document mutations must `this.revision++` so `isDirty` and any document-derived
+preview/validation react. Session-only changes (selection) intentionally do not.
 
 ## Next Steps
 
-- [CLI Integration](cli-integration.md) - Store → CLI bridge
+- [CLI Integration](cli-integration.md) - State → backend bridge
 - [Schema Validation](../guides/schemas.md) - Zod integration
-- [Testing Guide](../testing.md) - Store testing patterns
+- [Testing Guide](../testing.md) - State testing patterns

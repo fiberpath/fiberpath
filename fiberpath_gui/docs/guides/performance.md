@@ -4,66 +4,47 @@ Complete guide to profiling and optimizing FiberPath GUI performance.
 
 ## Overview
 
-FiberPath GUI is designed for responsiveness with lazy loading, memoization, and optimized renders. This guide covers profiling tools and optimization patterns.
+FiberPath GUI is built on Svelte 5, whose compiler tracks reactivity at the level
+of individual values. There is no virtual DOM diff and no render-management layer
+to tune — updates touch only the DOM nodes that depend on the changed state. The
+optimization work that dominated the React build (selectors, `memo`, debounced
+re-renders) is gone; this guide focuses on what still matters: bundle size, lazy
+work, and keeping reactive dependencies tight.
 
-## v7 Baseline and Budget
+## Bundle Baseline and Budget
 
-Baseline values are tracked in `fiberpath_gui/perf/bundle-baseline.json` and enforced in CI with `npm run perf:bundle`.
+Baseline values are tracked in `fiberpath_gui/perf/bundle-baseline.json` and
+enforced in CI with `npm run perf:bundle` (`scripts/check-bundle-budget.mjs`).
 
-| Metric | Baseline | Source |
-| --- | --- | --- |
-| Total JS bundle | 598.96 kB | 2026-04-07 build snapshot |
-| Total CSS bundle | 59.42 kB | 2026-04-07 build snapshot |
-| Vite dev startup | 292 ms | 2026-04-07 `npm run dev` snapshot |
-| Common interaction render cost | Layer editing/profile pass tracked manually during v7 PR review | React DevTools Profiler capture on target hardware |
+| Metric           | Baseline   | Source                                          |
+| ---------------- | ---------- | ----------------------------------------------- |
+| Total JS bundle  | ~308 kB    | React → Svelte 5 cutover snapshot (2026-06-26)  |
+| Total CSS bundle | ~64 kB     | React → Svelte 5 cutover snapshot (2026-06-26)  |
 
-Bundle guardrail policy:
+The JS total dropped ~48% (from ~599 kB) at the cutover: removing the React
+runtime, Zustand, `@hello-pangea/dnd`, and `react-zoom-pan-pinch` more than paid
+for Svelte's (tiny) runtime, and the compiler emits less per-component code.
+
+Bundle guardrail policy (from `bundle-baseline.json`):
 
 - Regression limit: +15% over baseline for JS/CSS totals
-- Absolute cap: 750 kB JS, 90 kB CSS
+- Absolute cap: 400 kB JS, 80 kB CSS
 - CI artifact: `gui-bundle-metrics` (`fiberpath_gui/perf/reports/bundle-metrics.json`)
-- Preview caching policy: no persistent cache in v7 (request-id race guard prevents stale response overwrite).
+- Preview caching policy: no persistent cache (a monotonic request-id guard in
+  `previewSession` drops stale responses instead).
 
 ## Profiling Tools
 
-### React DevTools Profiler
+### Browser Performance Tab
 
-**Installation:**
-
-1. Install React DevTools extension (Chrome/Firefox)
-2. Open DevTools → React tab → Profiler
-
-**Recording a Session:**
-
-1. Click record button (red circle)
-2. Perform actions in GUI (e.g., add layers, update mandrel)
-3. Stop recording
-4. Analyze flamegraph
-
-**Reading Flamegraph:**
-
-- **Width:** Time spent rendering
-- **Color:** Fast (green) vs slow (yellow/red)
-- **Tooltip:** Component name, render duration
-- **Drill down:** Click to see child components
-
-**Example Findings:**
-
-```text
-PlanForm (12ms)
-├─ MandrelSection (3ms)
-├─ TowSection (2ms)
-└─ LayerManager (7ms)
-   └─ LayerItem (1ms × 7 layers)
-```
-
-### Chrome Performance Tab
+The Tauri webview is Chromium/WebKit, so the browser DevTools Performance panel
+is the primary profiler.
 
 **Recording:**
 
 1. Open DevTools → Performance tab
 2. Click record
-3. Perform actions
+3. Perform actions (add layers, edit mandrel, scrub the preview)
 4. Stop recording
 
 **Analysis:**
@@ -77,6 +58,10 @@ PlanForm (12ms)
 - Long tasks (>50ms)
 - Layout thrashing
 - Excessive repaints
+
+Because Svelte updates are surgical, "wasted render" hunting is rarely the
+problem — look instead for expensive synchronous work in event handlers or
+`$effect`s.
 
 ### Vite Build Analyzer
 
@@ -98,272 +83,149 @@ Opens interactive visualization of bundle contents.
 
 ## Optimization Patterns
 
-### 1. Memoization
+### 1. Keep `$derived` dependencies tight
 
-#### useMemo for Expensive Computations
+`$derived` recomputes only when the values it reads change. Read the narrowest
+thing you need so derivations don't recompute on unrelated updates.
 
-```typescript
-import { useMemo } from 'react';
-function LayerList() {
-  const layers = useProjectStore((s) => s.project.layers);
-  // ✅ Memoize expensive sort
-  const sortedLayers = useMemo(
-    () => [...layers].sort((a, b) => a.index - b.index),
-    [layers]
-  );
-  return <div>{sortedLayers.map(/* render */)}</div>;
-}
+```svelte
+<script lang="ts">
+  import { projectSession } from "../../state/project-session.svelte";
+
+  // ✅ Tracks only the layers array
+  const layerCount = $derived(projectSession.document.layers.length);
+</script>
 ```
 
-**When to use:**
+There is no selector or shallow-comparison helper to configure — the compiler
+derives the dependency graph from your reads.
 
-- Sorting/filtering large arrays
-- Complex calculations
-- Object transformations
+### 2. Derive expensive transforms with `$derived`
 
-**When NOT to use:**
+Sorting/filtering belongs in a `$derived`, which memoizes by dependency:
 
-- Simple array maps (no transformation)
-- Cheap operations (<1ms)
+```svelte
+<script lang="ts">
+  const sorted = $derived([...layers].sort((a, b) => a.index - b.index));
+</script>
 
-#### React.memo for Component Memoization
-
-```typescript
-import { memo } from 'react';
-const LayerItem = memo(function LayerItem({ layer }: { layer: Layer }) {
-  return <div>{layer.windType}: {layer.terminal ? 'Terminal' : 'Non-terminal'}</div>;
-});
+{#each sorted as layer (layer.id)}
+  <LayerRow {layer} />
+{/each}
 ```
 
-**Behavior:** Re-renders only if props change (shallow comparison).
+The sort runs only when `layers` changes, not on every unrelated update. Always
+key `{#each}` blocks with a stable id so Svelte moves DOM nodes instead of
+rebuilding them.
 
-**Use Cases:**
+### 3. Debounce expensive side effects
 
-- List items that rarely update
-- Expensive child components
-- Pure presentation components
+Debouncing still matters for work that hits the backend or does heavy computation
+(preview regeneration, validation). Use the shared `debounce` helper
+(`src/lib/debounce.ts`) in the event handler — not a re-render hook:
 
-**Avoid for:**
+```svelte
+<script lang="ts">
+  import { debounce } from "../../lib/debounce";
+  import { projectSession } from "../../state/project-session.svelte";
 
-- Components with frequent updates
-- Components with object/array props (use custom comparison)
+  const validate = debounce((v: number) => {
+    errors = { ...errors, diameter: validateDiameter(v) };
+  });
 
-#### Custom Comparison
-
-```typescript
-const LayerItem = memo(
-  function LayerItem({ layer }: { layer: Layer }) {
-    return <div>...</div>;
-  },
-  (prevProps, nextProps) => {
-    // Return true if props are equal (skip re-render)
-    return prevProps.layer.id === nextProps.layer.id &&
-           prevProps.layer.windType === nextProps.layer.windType;
+  function onInput(raw: string) {
+    const value = parseNumericInput(raw);
+    projectSession.updateMandrel({ diameter: value }); // state updates immediately
+    validate(value); // validation is debounced
   }
-);
+</script>
 ```
 
-### 2. Zustand Shallow Selectors
+### 4. Drop stale async results
+
+For async work that can be superseded (preview generation), guard with a
+monotonic request id so a slow earlier response can't overwrite a newer one —
+this is how `PreviewSession` avoids a stale-image race:
 
 ```typescript
-import { shallow } from "zustand/shallow";
-// ❌ Bad: Re-renders on any state change
-const state = useProjectStore();
-// ✅ Good: Re-renders only when mandrel changes
-const mandrel = useProjectStore((s) => s.project.mandrel, shallow);
-// ✅ Better: Re-renders only when diameter changes
-const diameter = useProjectStore((s) => s.project.mandrel.diameter);
+const requestId = ++this.#requestId;
+const result = await plotDefinition(/* … */);
+if (requestId !== this.#requestId) return; // superseded
+this.image = result.image;
 ```
 
-**Shallow Comparison:**
+### 5. Lazy work and code splitting
 
-- Compares object keys/values one level deep
-- Prevents re-renders when object reference changes but content doesn't
-
-**Best Practice:** Use primitive selectors when possible.
-
-### 3. Virtualization (for Large Lists)
-
-**Library:** `react-window` or `react-virtual`
+Use dynamic `import()` for heavy, rarely-used modules so they stay out of the
+initial bundle:
 
 ```typescript
-import { FixedSizeList } from 'react-window';
-function LargeLayerList({ layers }: { layers: Layer[] }) {
-  return (
-    <FixedSizeList
-      height={600}
-      itemCount={layers.length}
-      itemSize={50}
-      width="100%"
-    >
-      {({ index, style }) => (
-        <div style={style}>
-          <LayerItem layer={layers[index]} />
-        </div>
-      )}
-    </FixedSizeList>
-  );
-}
+const { renderHeavyThing } = await import("./heavyThing");
 ```
 
-**Use Case:** Lists with 100+ items.
-
-### 4. Debouncing
-
-```typescript
-import { useState, useEffect } from 'react';
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-}
-// Usage
-function DiameterInput() {
-  const [diameter, setDiameter] = useState(150);
-  const debouncedDiameter = useDebounce(diameter, 300);
-  const updateMandrel = useProjectStore((s) => s.updateMandrel);
-  useEffect(() => {
-    updateMandrel({ diameter: debouncedDiameter });
-  }, [debouncedDiameter]);
-  return (
-    <input
-      type="number"
-      value={diameter}
-      onChange={(e) => setDiameter(Number(e.target.value))}
-    />
-  );
-}
-```
-
-**Use Cases:**
-
-- Search inputs
-- Slider controls
-- Auto-save
-
-### 5. Code Splitting
-
-```typescript
-import { lazy, Suspense } from 'react';
-// ✅ Lazy load heavy components
-const PlotPanel = lazy(() => import('./components/PlotPanel'));
-function App() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <PlotPanel />
-    </Suspense>
-  );
-}
-```
-
-**Benefit:** Reduces initial bundle size, faster startup.
-
-### 6. Event Handler Optimization
-
-```typescript
-// ❌ Bad: Creates new function on every render
-function PlanForm() {
-  const updateMandrel = useProjectStore((s) => s.updateMandrel);
-  return (
-    <input onChange={(e) => updateMandrel({ diameter: Number(e.target.value) })} />
-  );
-}
-// ✅ Good: Stable function reference
-import { useCallback } from 'react';
-function PlanForm() {
-  const updateMandrel = useProjectStore((s) => s.updateMandrel);
-  const handleDiameterChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      updateMandrel({ diameter: Number(e.target.value) });
-    },
-    [updateMandrel]
-  );
-  return <input onChange={handleDiameterChange} />;
-}
-```
-
-**When to use:** When handler is passed to memoized child component.
+Prefer doing expensive work on demand (e.g. only when a panel opens) rather than
+eagerly at mount.
 
 ## Common Performance Issues
 
-### Issue: Excessive Re-renders
+### Issue: Slow event handler
 
-**Symptom:** Component renders multiple times per user action.
+**Symptom:** A click or input feels janky.
 
-**Diagnosis:**
-
-```typescript
-import { useEffect } from "react";
-function MyComponent() {
-  useEffect(() => {
-    console.log("MyComponent rendered");
-  });
-  // ...
-}
-```
-
-**Causes:**
-
-- Selecting entire store instead of specific values
-- Creating objects/arrays in render
-- Prop changes triggering cascade
-
-**Solution:**
-
-- Use shallow selectors
-- Memoize derived data
-- Use React.memo for expensive children
-
-### Issue: Slow List Rendering
-
-**Symptom:** Adding layer takes >500ms.
-
-**Diagnosis:** Profile in React DevTools, check LayerManager duration.
+**Diagnosis:** Record the interaction in the Performance tab; look for a long
+task inside the handler.
 
 **Solutions:**
 
-- Add `key` prop to list items (use stable IDs)
-- Memoize LayerItem component
-- Virtualize if 100+ items
+- Move heavy computation into a `$derived` (memoized) or off the critical path
+- Debounce backend-bound work
+- Avoid synchronous JSON of large payloads in the handler
 
-### Issue: Large Bundle Size
+### Issue: Slow list rendering
 
-**Symptom:** Initial load >5 seconds.
+**Symptom:** Adding a layer is sluggish with many rows.
+
+**Solutions:**
+
+- Key every `{#each}` with a stable id so Svelte reuses DOM nodes
+- Derive sorted/filtered views once, not per row
+- Virtualize only if lists realistically reach hundreds of items
+
+### Issue: Large bundle size
+
+**Symptom:** `npm run perf:bundle` fails the budget, or initial load is slow.
 
 **Diagnosis:** Run `npx vite-bundle-visualizer`.
 
 **Solutions:**
 
-- Code split heavy components (PlotPanel)
+- Code split heavy/optional features behind dynamic `import()`
 - Tree-shake unused dependencies
-- Use dynamic imports for CLI-heavy features
+- Question whether a new dependency is needed at all
 
-### Issue: Memory Leaks
+### Issue: Leaked subscriptions
 
-**Symptom:** Memory grows over time, app becomes sluggish.
-
-**Diagnosis:** Chrome DevTools → Memory → Heap Snapshot.
+**Symptom:** Memory grows over time.
 
 **Common Causes:**
 
-- Event listeners not cleaned up
-- Timers not cleared
-- Zustand subscriptions not unsubscribed
+- Tauri event listeners not unlistened
+- Timers/intervals not cleared
 
-**Solution:**
+**Solution:** Return a cleanup from `onMount`/`$effect`, mirroring how the shell
+tears down the theme watcher, CLI health polling, and stream subscription:
 
-```typescript
-useEffect(() => {
-  const unlisten = listen("stream-progress", handleProgress);
-  return () => {
-    unlisten(); // Cleanup
-  };
-}, []);
+```svelte
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { machineSession } from "../state/machine-session.svelte";
+
+  onMount(() => {
+    let cleanup = () => {};
+    machineSession.subscribe().then((fn) => (cleanup = fn));
+    return () => cleanup();
+  });
+</script>
 ```
 
 ## Performance Budgets
@@ -374,80 +236,60 @@ useEffect(() => {
 | ---------------------- | ------ | -------- |
 | First Contentful Paint | <1s    | <2s      |
 | Time to Interactive    | <2s    | <3s      |
-| Component Render       | <16ms  | <50ms    |
-| Store Update           | <5ms   | <16ms    |
-| Bundle Size (JS)       | <500KB | <1MB     |
+| Interaction handling   | <16ms  | <50ms    |
+| State update           | <5ms   | <16ms    |
+| Bundle Size (JS)       | <400KB | <750KB   |
 | Memory Usage (idle)    | <100MB | <200MB   |
 
 ### Measuring
 
 ```typescript
-// Render time
-performance.mark("render-start");
-// ...component render
-performance.mark("render-end");
-performance.measure("render", "render-start", "render-end");
-const [measure] = performance.getEntriesByName("render");
-console.log(`Render took ${measure.duration.toFixed(2)}ms`);
+performance.mark("op-start");
+// ...work
+performance.mark("op-end");
+performance.measure("op", "op-start", "op-end");
+const [measure] = performance.getEntriesByName("op");
+console.log(`Took ${measure.duration.toFixed(2)}ms`);
 ```
 
-## Optimizing Tauri Commands
+## Optimizing Tauri / Backend Calls
 
-### Async All the Things
+### Show loading state for async work
 
 ```typescript
-// ❌ Bad: Blocking UI
-const result = await planWind(inputPath);
-setResult(result);
-// ✅ Good: Show loading state
-setIsLoading(true);
-const result = await planWind(inputPath);
-setResult(result);
-setIsLoading(false);
+session.isGenerating = true;
+try {
+  const result = await plotDefinition(/* … */);
+  session.image = result.image;
+} finally {
+  session.isGenerating = false;
+}
 ```
 
-### Debounce Preview Updates
+### Debounce preview updates
 
 ```typescript
-const debouncedScale = useDebounce(scale, 300);
-useEffect(() => {
-  if (gcodePath) {
-    plotPreview(gcodePath, debouncedScale).then(setPreview);
-  }
-}, [gcodePath, debouncedScale]);
+const regenerate = debounce(() => previewSession.generate(), 300);
+// call regenerate() from slider/scrubber input
 ```
 
-**Prevents:** Rapid fire CLI calls on slider drag.
+**Prevents:** Rapid-fire backend calls on slider drag. The request-id guard then
+ensures only the latest response is applied.
 
 ## Testing Performance
 
-### Automated Performance Tests
-
-```typescript
-import { render } from '@testing-library/react';
-import { performance } from 'perf_hooks';
-it('should render LayerList in <50ms', () => {
-  const layers = Array.from({ length: 100 }, (_, i) => createLayer('hoop'));
-  const start = performance.now();
-  render(<LayerList layers={layers} />);
-  const end = performance.now();
-  expect(end - start).toBeLessThan(50);
-});
-```
-
 ### Synthetic Benchmarks
 
+State logic is plain classes, so it benchmarks without rendering:
+
 ```typescript
-describe("Store performance", () => {
-  it("should handle 1000 layer adds in <100ms", () => {
-    const store = useProjectStore.getState();
-    const start = performance.now();
-    for (let i = 0; i < 1000; i++) {
-      store.addLayer("hoop");
-    }
-    const end = performance.now();
-    expect(end - start).toBeLessThan(100);
-  });
+import { ProjectSession } from "../state/project-session.svelte";
+
+it("handles 1000 layer adds quickly", () => {
+  const session = new ProjectSession();
+  const start = performance.now();
+  for (let i = 0; i < 1000; i++) session.addLayer("hoop");
+  expect(performance.now() - start).toBeLessThan(100);
 });
 ```
 
@@ -455,28 +297,25 @@ describe("Store performance", () => {
 
 Before optimizing:
 
-- [ ] Profile with React DevTools Profiler
-- [ ] Identify slowest component (>50ms)
-- [ ] Check if component re-renders unnecessarily
-- [ ] Verify selector granularity (primitive vs object)
-- [ ] Check for inline object/array creation
-- [ ] Confirm keys on list items are stable
+- [ ] Record the interaction in the Performance tab
+- [ ] Identify the long task (>50ms) and where it runs
+- [ ] Check `$derived`/`$effect` dependencies aren't over-broad
+- [ ] Confirm `{#each}` blocks are keyed with stable ids
+- [ ] Confirm backend-bound work is debounced
 
 After optimizing:
 
 - [ ] Re-profile to verify improvement
 - [ ] Test edge cases (100+ layers, large files)
-- [ ] Ensure no new bugs introduced
-- [ ] Document optimization in code comments
+- [ ] Run `npm run perf:bundle` to confirm the budget holds
 
 ## Resources
 
-- [React DevTools Profiler Docs](https://react.dev/reference/react/Profiler)
-- [Zustand Performance Tips](https://docs.pmnd.rs/zustand/guides/performance)
+- [Svelte 5 reactivity (runes)](https://svelte.dev/docs/svelte/what-are-runes)
 - [Web Vitals](https://web.dev/vitals/)
 
 ## Next Steps
 
-- [State Management](../architecture/state-management.md) - Optimizing store access
+- [State Management](../architecture/state-management.md) - Reactive state design
 - [Tech Stack](../architecture/tech-stack.md) - Understanding Vite optimizations
 - [Testing Guide](../testing.md) - Performance testing patterns

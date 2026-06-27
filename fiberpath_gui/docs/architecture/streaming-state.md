@@ -10,10 +10,11 @@ The FiberPath GUI streaming system enables direct G-code execution on Marlin-com
 
 ```text
 ┌─────────────────────────────────────┐
-│  StreamPanel (React)                │  User interactions
+│  Machine workspace (Svelte)         │  User interactions
 │  - Connection UI                    │  - Play/Pause/Cancel buttons
 │  - Manual control                   │  - File selection
 │  - Progress display                 │  - Command log
+│  state: machineSession (runes)      │
 └──────────┬──────────────────────────┘
            │ invoke() + listen()
            ▼
@@ -301,99 +302,90 @@ while streaming:
 
 ## Frontend Integration
 
-### Event Listeners
+The frontend side is a single reactive class, `MachineSession`
+(`src/state/machine-session.svelte.ts`), exported as the `machineSession`
+singleton. It consolidates what was previously a Zustand stream store plus
+several React action hooks and a `useStreamEvents` hook. It reuses the
+framework-agnostic `marlin-api` (the Tauri bridge in `src/lib/marlin-api.ts`)
+and `streamFeedback` (log/toast message builders) unchanged.
+
+### Reactive state
 
 ```typescript
-import { listen } from "@tauri-apps/api/event";
-// Progress updates
-const unlistenProgress = await listen<ProgressPayload>(
-  "stream-progress",
-  (event) => {
-    setProgress(event.payload.commandsSent / event.payload.commandsTotal);
-    setCurrentCommand(event.payload.command);
-  }
-);
-// Completion
-const unlistenComplete = await listen<CompletePayload>(
-  "stream-complete",
-  (event) => {
-    console.log("Streaming complete:", event.payload);
-    setIsStreaming(false);
-  }
-);
-// Errors
-const unlistenError = await listen<ErrorPayload>("stream-error", (event) => {
-  console.error("Streaming error:", event.payload.message);
-  showErrorDialog(event.payload.message);
-});
-// Cleanup on unmount
-return () => {
-  unlistenProgress();
-  unlistenComplete();
-  unlistenError();
-};
+export class MachineSession {
+  status = $state<ConnectionStatus>("disconnected"); // disconnected | connecting | connected | paused
+  ports = $state<SerialPort[]>([]);
+  selectedPort = $state<string | null>(null);
+  baudRate = $state<number>(DEFAULT_BAUD_RATE);
+
+  isStreaming = $state(false);
+  filePath = $state<string | null>(null);
+  progress = $state<StreamProgress | null>(null);
+
+  log = $state<LogEntry[]>([]);
+
+  readonly isConnected = $derived(this.status === "connected" || this.status === "paused");
+  readonly isPaused = $derived(this.status === "paused");
+  readonly canStartStream = $derived(Boolean(this.filePath) && this.isConnected);
+}
+
+export const machineSession = new MachineSession();
 ```
 
-### React Component State
+Components read these fields and call methods (`connect`, `startStream`,
+`pause`, `resume`, `cancel`, `stop`); derived flags like `canStartStream` drive
+button enablement without manual bookkeeping.
 
-React component (pseudocode):
+### Event subscription
+
+Stream lifecycle events from Rust are subscribed once via `subscribe()`, which
+wires the `marlin-api` listeners into reactive updates and returns a cleanup that
+unlistens:
 
 ```typescript
-function StreamPanel() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentCommand, setCurrentCommand] = useState('');
-  const connect = async () => {
-    const response = await invoke('marlin_connect', { port, baudRate });
-    if (response.status === 'connected') {
-      setIsConnected(true);
-    }
-  };
-  const streamFile = async () => {
-    const response = await invoke('marlin_stream_file', { filePath, dryRun: false });
-    if (response.status === 'streaming') {
-      setIsStreaming(true);
-    }
-  };
-  const pause = async () => {
-    await invoke('marlin_pause');
-    setIsPaused(true);
-  };
-  const resume = async () => {
-    await invoke('marlin_resume');
-    setIsPaused(false);
-  };
-  const cancel = async () => {
-    await invoke('marlin_cancel');
-    setIsStreaming(false);
-    setIsPaused(false);
-    setProgress(0);
-  };
-  useEffect(() => {
-    const unlisten = listen('stream-progress', (e) => {
-      setProgress(e.payload.commandsSent / e.payload.commandsTotal);
-      setCurrentCommand(e.payload.command);
-    });
-    return () => unlisten();
-  }, []);
-  return (
-    <div>
-      {!isConnected && <button onClick={connect}>Connect</button>}
-      {isConnected && !isStreaming && <button onClick={streamFile}>Start</button>}
-      {isStreaming && !isPaused && <button onClick={pause}>Pause</button>}
-      {isStreaming && isPaused && (
-        <>
-          <button onClick={resume}>Resume</button>
-          <button onClick={cancel}>Cancel</button>
-        </>
-      )}
-      <progress value={progress} />
-      <div>Current: {currentCommand}</div>
-    </div>
-  );
+async subscribe(): Promise<() => void> {
+  const unlisten = await Promise.all([
+    marlin.onStreamStarted((s) => {
+      this.isStreaming = true;
+    }),
+    marlin.onStreamProgress((p) => {
+      // Stale-event guard (#219): drop progress from a finished/cancelled job.
+      if (!this.isStreaming) return;
+      this.progress = { sent: p.commandsSent, total: p.commandsTotal, currentCommand: p.command };
+    }),
+    marlin.onStreamComplete(() => this.#resetAfterCancel()),
+    marlin.onStreamError((e) => {
+      this.#resetAfterCancel();
+    }),
+  ]);
+  return () => unlisten.forEach((u) => u());
 }
+```
+
+### Markup
+
+The machine workspace components (`src/components/machine/*.svelte`) bind
+straight to the singleton — no local mirror state:
+
+```svelte
+<script lang="ts">
+  import { machineSession as m } from "../../state/machine-session.svelte";
+</script>
+
+{#if m.progress}
+  <div class="progress__head">
+    <span>Progress</span><span>{m.progress.sent} / {m.progress.total}</span>
+  </div>
+  <progress value={m.progress.sent} max={Math.max(m.progress.total, 1)}></progress>
+{/if}
+
+<button disabled={!m.canStartStream} onclick={() => m.startStream()}>Start</button>
+{#if m.isStreaming && !m.isPaused}
+  <button onclick={() => m.pause()}>Pause</button>
+{:else if m.isPaused}
+  <button onclick={() => m.resume()}>Resume</button>
+  <button onclick={() => m.cancel()}>Cancel</button>
+{/if}
 ```
 
 ## Error Handling
@@ -517,9 +509,12 @@ await invoke("marlin_stream_file", { filePath, dryRun: true });
 
 ### Progress lags behind
 
-**Cause:** Frontend re-rendering too often.
+**Cause:** A listener attached to the wrong event, or progress mutating a value
+nothing reads.
 
-**Fix:** Use shallow selectors, memoize expensive computations.
+**Fix:** Confirm `subscribe()` ran and that the markup reads `machineSession.progress`.
+Svelte's fine-grained reactivity updates only the affected nodes, so frequent
+progress events do not re-render the whole panel.
 
 ### Commands not executing
 
@@ -532,5 +527,5 @@ await invoke("marlin_stream_file", { filePath, dryRun: true });
 ## Next Steps
 
 - [CLI Integration](cli-integration.md) - How Rust bridges to Python
-- [State Management](state-management.md) - React state patterns
+- [State Management](state-management.md) - runes state patterns
 - [Marlin Streaming Guide](../../guides/marlin-streaming.md) - User documentation

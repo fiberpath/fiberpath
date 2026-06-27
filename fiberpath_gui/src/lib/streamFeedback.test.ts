@@ -1,11 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createStreamFeedback } from "./streamFeedback";
-import type { LogEntry } from "../stores/streamStore";
-import type { Toast } from "../stores/toastStore";
 
 function makeMocks() {
-  const addLogEntry = vi.fn<(entry: Omit<LogEntry, "id" | "timestamp">) => void>();
-  const addToast = vi.fn<(toast: Omit<Toast, "id">) => void>();
+  const addLogEntry = vi.fn();
+  const addToast = vi.fn();
   const feedback = createStreamFeedback({ addLogEntry, addToast });
   return { addLogEntry, addToast, feedback };
 }

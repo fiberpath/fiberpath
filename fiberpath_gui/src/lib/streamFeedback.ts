@@ -1,10 +1,12 @@
 import { TOAST_DURATION_ERROR_MS } from "./constants";
 import { toastMessages } from "./toastMessages";
-import type { LogEntry } from "../stores/streamStore";
-import type { Toast } from "../stores/toastStore";
 
-type AddLogEntry = (entry: Omit<LogEntry, "id" | "timestamp">) => void;
-type AddToast = (toast: Omit<Toast, "id">) => void;
+// Structural types so this module stays framework-agnostic (no dependency on the
+// state modules that consume it).
+type LogType = "info" | "command" | "response" | "stream" | "progress" | "error";
+type ToastType = "success" | "error" | "warning" | "info";
+type AddLogEntry = (entry: { type: LogType; content: string }) => void;
+type AddToast = (toast: { type: ToastType; message: string; duration?: number }) => void;
 
 interface StreamFeedbackHandlers {
   addLogEntry: AddLogEntry;

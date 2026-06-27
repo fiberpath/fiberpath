@@ -10,7 +10,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const srcRoot = path.join(repoRoot, "src");
 
 const DECLARATION_FILE_EXT = new Set([".css"]);
-const USAGE_FILE_EXT = new Set([".css", ".ts", ".tsx", ".svelte"]);
+const USAGE_FILE_EXT = new Set([".css", ".ts", ".svelte"]);
 
 async function collectFiles(rootDir, extSet) {
   const results = [];

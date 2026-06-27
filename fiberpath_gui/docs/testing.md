@@ -5,10 +5,16 @@ Comprehensive testing documentation for FiberPath GUI test suite.
 ## Test Stack
 
 - **Framework:** Vitest (Vite-native test runner)
-- **Assertions:** Expect API (Jest-compatible)
-- **React Testing:** @testing-library/react
+- **Assertions:** Expect API (Jest-compatible) + `@testing-library/jest-dom` matchers
+- **Component testing:** `@testing-library/svelte`
 - **Environment:** jsdom (simulated DOM)
 - **Coverage:** v8 provider
+
+Component cleanup between tests is handled automatically by the
+`@testing-library/svelte` Vite plugin (`svelteTesting()`), wired in
+`vitest.config.ts` alongside the `svelte()` plugin. The setup file
+(`src/tests/setup.ts`) only extends `expect` with the jest-dom matchers and mocks
+`crypto.randomUUID` / `window.matchMedia`.
 
 ## Running Tests
 
@@ -33,7 +39,7 @@ Re-runs tests on file changes. Useful during development.
 ```sh
 npm test -- schemas.test.ts
 npm test -- validation.test.ts
-npm test -- projectStore.test.ts
+npm test -- project-session.svelte.test.ts
 ```
 
 ### With Coverage
@@ -54,31 +60,30 @@ Opens interactive test UI in browser for exploring tests and results.
 
 ## Test Organization
 
-### Current Test Suite
+Tests live next to the code they cover. Reactive state modules and services use
+the `.svelte.ts` suffix, so their tests are `*.svelte.test.ts`; component tests
+are `*.svelte.test.ts` beside each `.svelte` file.
 
 ```sh
 src/
 ├── lib/
-│   ├── schemas.test.ts        # 43 tests - Zod schema validation
-│   └── validation.test.ts     # JSON schema validation (AJV)
-├── stores/
-│   └── projectStore.test.ts   # Zustand store actions
+│   ├── schemas.test.ts            # Zod schema validation
+│   ├── validation.test.ts         # JSON schema validation (AJV)
+│   └── panzoom.test.ts            # Viewport transform math
+├── state/
+│   ├── project-session.svelte.test.ts   # Project session (document + dirty tracking)
+│   ├── machine-session.svelte.test.ts   # Marlin streaming session
+│   ├── preview-session.svelte.test.ts   # Preview generation
+│   └── ...                              # ui-state, theme, notifications, cli-health
+├── services/
+│   └── file-operations.svelte.test.ts   # File open/save/export flows
 ├── types/
-│   └── converters.test.ts     # Type conversion utilities
-└── tests/
-    └── integration/
-        └── workflows.test.ts  # End-to-end workflows
+│   └── converters.test.ts         # Document ↔ wind-definition conversion
+└── components/
+    ├── forms/MandrelForm.svelte.test.ts
+    ├── layers/LayerList.svelte.test.ts
+    └── ...                        # editors, dialogs, machine panels
 ```
-
-### Test Counts
-
-- **Schema validation:** 43 tests (Zod runtime validation)
-- **State management:** ~15 tests (store actions)
-- **Validation:** ~25 tests (JSON schema)
-- **Type converters:** ~10 tests
-- **Integration:** ~5 tests
-
-**Total:** ~100 tests, all passing ✅
 
 ## Writing Tests
 
@@ -91,18 +96,12 @@ import { describe, it, expect } from "vitest";
 import { MandrelParametersSchema } from "./schemas";
 describe("MandrelParametersSchema", () => {
   it("should validate correct mandrel parameters", () => {
-    const valid = {
-      diameter: 150,
-      windLength: 800,
-    };
+    const valid = { diameter: 150, windLength: 800 };
     const result = MandrelParametersSchema.safeParse(valid);
     expect(result.success).toBe(true);
   });
   it("should reject negative diameter", () => {
-    const invalid = {
-      diameter: -10,
-      windLength: 800,
-    };
+    const invalid = { diameter: -10, windLength: 800 };
     const result = MandrelParametersSchema.safeParse(invalid);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -112,86 +111,94 @@ describe("MandrelParametersSchema", () => {
 });
 ```
 
-### Store Tests
+### State Tests
 
-**Purpose:** Verify Zustand actions correctly update state.
+**Purpose:** Verify reactive state classes update correctly. Because each state
+module exports its class, tests instantiate a fresh, isolated instance.
 
 ```typescript
 import { describe, it, expect, beforeEach } from "vitest";
-import { useProjectStore } from "./projectStore";
-describe("projectStore", () => {
+import { ProjectSession, createEmptyDocument } from "./project-session.svelte";
+
+describe("ProjectSession", () => {
+  let session: ProjectSession;
   beforeEach(() => {
-    // Reset store to initial state
-    useProjectStore.setState({
-      project: null,
-      activeLayerId: null,
-      isDirty: false,
-      filePath: null,
-    });
+    session = new ProjectSession();
   });
-  it("should create new project", () => {
-    const store = useProjectStore.getState();
-    store.newProject();
-    expect(store.project).not.toBeNull();
-    expect(store.project?.layers).toHaveLength(1);
-    expect(store.isDirty).toBe(false);
+
+  it("starts from the canonical empty document", () => {
+    expect(session.document).toEqual(createEmptyDocument());
+    expect(session.document.mandrel.diameter).toBe(150);
   });
-  it("should mark project as dirty after update", () => {
-    const store = useProjectStore.getState();
-    store.newProject();
-    store.updateMandrel({ diameter: 200 });
-    expect(store.isDirty).toBe(true);
+
+  it("is not dirty until a mutation, then dirty until saved", () => {
+    expect(session.isDirty).toBe(false);
+    session.updateMandrel({ diameter: 200 });
+    expect(session.isDirty).toBe(true);
+    session.markSaved();
+    expect(session.isDirty).toBe(false);
   });
 });
 ```
+
+> `.svelte.test.ts` files run through the Svelte compiler, so runes (`$state`,
+> `$derived`) work inside the class under test — that's why state tests carry the
+> `.svelte` suffix.
 
 ### Component Tests
 
-**Purpose:** Verify React components render correctly and handle interactions.
+**Purpose:** Verify Svelte components render correctly and handle interactions.
+Pass the component (and any props) to `render`; drive the shared state singleton
+and reset it in `beforeEach`.
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { MyComponent } from './MyComponent';
-describe('MyComponent', () => {
-  it('should render with props', () => {
-    render(<MyComponent title="Test" />);
-    expect(screen.getByText('Test')).toBeInTheDocument();
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/svelte";
+import MandrelForm from "./MandrelForm.svelte";
+import { projectSession } from "../../state/project-session.svelte";
+
+beforeEach(() => {
+  projectSession.newDocument();
+});
+
+describe("MandrelForm.svelte", () => {
+  it("shows the current diameter from the session", () => {
+    projectSession.document.mandrel.diameter = 200;
+    render(MandrelForm);
+    const input = screen.getByLabelText("Diameter") as HTMLInputElement;
+    expect(input.value).toBe("200");
   });
-  it('should handle click', () => {
-    const onClick = vi.fn();
-    render(<MyComponent onClick={onClick} />);
-    fireEvent.click(screen.getByRole('button'));
-    expect(onClick).toHaveBeenCalledOnce();
+
+  it("updates the mandrel when the diameter input changes", async () => {
+    render(MandrelForm);
+    const input = screen.getByLabelText("Diameter");
+    await fireEvent.input(input, { target: { value: "180" } });
+    expect(projectSession.document.mandrel.diameter).toBe(180);
   });
 });
 ```
 
+For props, pass them as the second argument: `render(NumberField, { id, label, value, oninput })`.
+
 ### Integration Tests
 
-**Purpose:** Test complete workflows across multiple components/stores.
+**Purpose:** Test complete flows across state, services, and conversion.
 
 ```typescript
-import { describe, it, expect } from "vitest";
-import { useProjectStore } from "../stores/projectStore";
-describe("Plan Workflow", () => {
-  it("should create project, add layer, and update mandrel", () => {
-    const store = useProjectStore.getState();
-    // Step 1: New project
-    store.newProject();
-    expect(store.project).not.toBeNull();
-    // Step 2: Add helical layer
-    store.addLayer({
-      windType: "helical",
-      windAngle: 45,
-      terminal: false,
-    });
-    expect(store.project?.layers).toHaveLength(2);
-    // Step 3: Update mandrel
-    store.updateMandrel({ diameter: 200, windLength: 1000 });
-    expect(store.project?.mandrelParameters.diameter).toBe(200);
-    // Verify dirty state
-    expect(store.isDirty).toBe(true);
+import { describe, it, expect, beforeEach } from "vitest";
+import { projectSession } from "../state/project-session.svelte";
+
+describe("Prepare workflow", () => {
+  beforeEach(() => projectSession.newDocument());
+
+  it("creates a project, adds a layer, and updates the mandrel", () => {
+    const id = projectSession.addLayer("helical");
+    projectSession.updateLayer(id, { helical: { wind_angle: 45 } as any });
+    projectSession.updateMandrel({ diameter: 200, wind_length: 1000 });
+
+    expect(projectSession.document.layers).toHaveLength(1);
+    expect(projectSession.document.mandrel.diameter).toBe(200);
+    expect(projectSession.isDirty).toBe(true);
   });
 });
 ```
@@ -211,18 +218,15 @@ describe("HelicalLayerSchema", () => {
   const invalidCases = [
     { windAngle: 100, terminal: false }, // Angle > 90
     { windAngle: -10, terminal: false }, // Negative angle
-    { windAngle: 45 }, // Missing terminal
   ];
   validCases.forEach((data, i) => {
     it(`should accept valid case ${i + 1}`, () => {
-      const result = HelicalLayerSchema.safeParse(data);
-      expect(result.success).toBe(true);
+      expect(HelicalLayerSchema.safeParse(data).success).toBe(true);
     });
   });
   invalidCases.forEach((data, i) => {
     it(`should reject invalid case ${i + 1}`, () => {
-      const result = HelicalLayerSchema.safeParse(data);
-      expect(result.success).toBe(false);
+      expect(HelicalLayerSchema.safeParse(data).success).toBe(false);
     });
   });
 });
@@ -230,54 +234,71 @@ describe("HelicalLayerSchema", () => {
 
 ### Mocking Tauri Commands
 
-When testing components that call Tauri commands:
+When testing state/services that call Tauri commands, mock `@tauri-apps/api/core`:
 
 ```typescript
 import { vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-it("should call plan command", async () => {
-  vi.mocked(invoke).mockResolvedValue({ success: true });
-  const result = await planProject(projectData);
-  expect(invoke).toHaveBeenCalledWith("plan_project", {
-    windDef: expect.any(Object),
-  });
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+it("streams via the Marlin bridge", async () => {
+  vi.mocked(invoke).mockResolvedValue({ /* StreamSummary */ });
+  await streamProgram("out.gcode", { baudRate: 115200, dryRun: true });
+  expect(invoke).toHaveBeenCalledWith(
+    "stream_program",
+    expect.objectContaining({ gcodePath: "out.gcode" }),
+  );
 });
 ```
 
+Compute wrappers are tested against a mocked `openapi-fetch` client — see
+[CLI Integration](architecture/cli-integration.md).
+
 ### Testing Error Handling
 
-Verify components handle errors gracefully:
+Verify components surface errors:
 
 ```typescript
-it('should display error message on validation failure', () => {
-  const invalidData = { diameter: -10 };
-  render(<MandrelForm initialData={invalidData} />);
-  expect(screen.getByText(/diameter must be positive/i)).toBeInTheDocument();
+it("shows a backend validation error for diameter", () => {
+  projectSession.setValidationError("mandrel.diameter", "Too small");
+  render(MandrelForm);
+  expect(screen.getByText("Too small")).toBeInTheDocument();
+});
+```
+
+### Testing Debounced Behavior
+
+Use `waitFor` to assert state that lands after a debounce window:
+
+```typescript
+import { waitFor } from "@testing-library/svelte";
+it("live-validates after the debounce window", async () => {
+  render(MandrelForm);
+  await fireEvent.input(screen.getByLabelText("Diameter"), { target: { value: "0" } });
+  await waitFor(() =>
+    expect(screen.getByText("Diameter must be greater than 0")).toBeInTheDocument(),
+  );
 });
 ```
 
 ## Coverage Goals
 
-### Target Coverage
+Coverage thresholds are enforced in `vitest.config.ts`:
 
-- **Statements:** 80%+
-- **Branches:** 75%+
-- **Functions:** 80%+
-- **Lines:** 80%+
+- **Lines:** 60%+
+- **Functions:** 65%+
+- **Branches:** 50%+
+- **Statements:** 60%+
 
-### Critical Areas (100% coverage required)
+### Critical Areas (high coverage expected)
 
 - Schema validation (`src/lib/schemas.ts`)
 - Error handling (`src/lib/validation.ts`)
-- State management (`src/stores/projectStore.ts`)
+- Project session (`src/state/project-session.svelte.ts`)
 
-### Lower Priority (50%+ acceptable)
+### Lower Priority
 
-- UI components (focus on critical paths)
-- Styling modules
+- Presentational components (focus on critical paths)
 - Type definitions
 
 ## Debugging Tests
@@ -288,11 +309,7 @@ it('should display error message on validation failure', () => {
 npm test -- --reporter=verbose
 ```
 
-Shows individual test names and durations.
-
 ### Debug Single Test
-
-Add `.only` to focus one test:
 
 ```typescript
 it.only("should validate mandrel", () => {
@@ -303,10 +320,10 @@ it.only("should validate mandrel", () => {
 ### Print Debug Info
 
 ```typescript
-it("should update state", () => {
-  store.updateMandrel({ diameter: 200 });
-  console.log("State:", store.project); // Visible in test output
-  expect(store.project?.mandrelParameters.diameter).toBe(200);
+it("updates state", () => {
+  session.updateMandrel({ diameter: 200 });
+  console.log("Document:", session.document);
+  expect(session.document.mandrel.diameter).toBe(200);
 });
 ```
 
@@ -316,35 +333,29 @@ it("should update state", () => {
 npm test -- --ui
 ```
 
-Opens browser UI showing:
-
-- Test hierarchy
-- Pass/fail status
-- Console output
-- Code coverage
-- Re-run buttons
+Opens a browser UI showing the test hierarchy, pass/fail status, console output,
+coverage, and re-run buttons.
 
 ## CI Integration
 
 Tests run automatically on every push and PR via GitHub Actions:
 
 ```yaml
-# .github/workflows/test.yml
 - name: Run tests
   run: npm test -- --run
 ```
 
 **PR Requirements:**
 
-- ✅ All tests must pass
-- ✅ No new TypeScript errors
-- ✅ Coverage must not decrease
+- All tests must pass
+- No new `tsc`/`svelte-check` type errors
+- Coverage must not drop below the configured thresholds
 
 ## Common Issues
 
 ### "Cannot find module '@/lib/schemas'"
 
-**Solution:** Check path alias in `vitest.config.ts`:
+**Solution:** Check the path alias in `vitest.config.ts`:
 
 ```typescript
 resolve: {
@@ -354,28 +365,32 @@ resolve: {
 }
 ```
 
-### Tests fail but code works
+### Runes don't work in a test
 
-**Solution:** May be testing implementation details. Focus on behavior:
+**Solution:** Code using `$state`/`$derived` must compile through Svelte. Name the
+file `*.svelte.test.ts` (and the module under test `*.svelte.ts`) so the Svelte
+plugin processes it.
+
+### Tests fail but the app works
+
+**Solution:** You may be asserting implementation details. Prefer visible behavior:
 
 ```typescript
-// Bad: Testing internal state
-expect(component.state.count).toBe(1);
-// Good: Testing visible behavior
+// Avoid: asserting private internals
+// Prefer: asserting rendered output
 expect(screen.getByText("Count: 1")).toBeInTheDocument();
 ```
 
 ### Mock not working
 
-**Solution:** Ensure mock is hoisted before imports:
+**Solution:** Ensure `vi.mock` is hoisted above imports:
 
 ```typescript
 vi.mock("@tauri-apps/api/core"); // Must be at top
-import { MyComponent } from "./MyComponent";
 ```
 
 ## Next Steps
 
 - [Schema Validation Guide](guides/schemas.md) - Writing schemas
-- [State Management](architecture/state-management.md) - Store patterns
+- [State Management](architecture/state-management.md) - State patterns
 - [Type Safety](reference/type-safety.md) - TypeScript patterns

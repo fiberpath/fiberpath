@@ -1,14 +1,9 @@
-import { expect, afterEach, vi } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { expect, vi } from "vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
 
-// Extend Vitest's expect with jest-dom matchers
+// Extend Vitest's expect with jest-dom matchers. Component cleanup after each
+// test is handled by the @testing-library/svelte vite plugin (svelteTesting()).
 expect.extend(matchers);
-
-// Cleanup after each test
-afterEach(() => {
-  cleanup();
-});
 
 // Mock crypto.randomUUID for tests
 if (!global.crypto) {

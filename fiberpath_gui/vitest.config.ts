@@ -1,11 +1,10 @@
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react(), svelte(), svelteTesting()],
+  plugins: [svelte(), svelteTesting()],
   test: {
     globals: true,
     environment: 'jsdom',
@@ -15,11 +14,10 @@ export default defineConfig({
       provider: 'v8',
       all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
-      include: ['src/**/*.{ts,tsx,svelte}'],
+      include: ['src/**/*.{ts,svelte}'],
       exclude: [
         'src/**/*.test.{ts,tsx}',
         'src/**/*.d.ts',
-        'src/main.tsx',
         'src/main.svelte.ts',
         'src/tests/**',
         'src/vite-env.d.ts',

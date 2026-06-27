@@ -92,7 +92,7 @@ This starts:
 
 **Hot Reload:**
 
-- Frontend changes (React/TypeScript) reload instantly
+- Frontend changes (Svelte/TypeScript) reload instantly
 - Rust changes trigger rebuild (~5-15 seconds)
 
 ### Run Frontend Only
@@ -137,9 +137,10 @@ npm test -- --coverage
 
 **Current Test Suite:**
 
-- 43 schema validation tests (all passing)
-- Project store tests
-- Component tests (planned)
+- Schema and validation tests (`src/lib`)
+- Reactive state tests (`src/state/*.svelte.test.ts`)
+- Service and converter tests
+- Svelte component tests (`*.svelte.test.ts`)
 
 ## Building
 
@@ -218,13 +219,18 @@ Runs in sequence:
 4. Rust formatter check (`cargo fmt --check`)
 5. Clippy (Rust linting)
 
-**CI Pipeline:** These checks plus `npm run build` and `npm run perf:bundle` run on every PR.
+`check:all` covers the plain `.ts` type check; the `.svelte`/`.svelte.ts`
+type check (`npm run check:svelte`, via `svelte-check`) runs as its own command.
+
+**CI Pipeline:** These checks plus `npm run check:svelte`, `npm run build`, and
+`npm run perf:bundle` run on every PR.
 
 ### Individual Commands
 
 ```sh
-# TypeScript and CSS checks
-npm run lint              # TypeScript type check (tsc --noEmit)
+# Type and CSS checks
+npm run lint              # TypeScript type check (tsc --noEmit) for .ts
+npm run check:svelte      # svelte-check for .svelte and .svelte.ts
 npm run lint:css          # Stylelint
 npm run lint:css:vars     # CSS variable guard
 npm run lint:css:fix      # Auto-fix CSS lint issues
@@ -243,17 +249,19 @@ npm run perf:bundle       # Enforce bundle budget and emit metrics
 
 ```sh
 fiberpath_gui/
-├── src/                          # Frontend code
-│   ├── main.tsx                  # App entry point
-│   ├── App.tsx                   # Root component with tab layout
-│   ├── components/               # UI components (tabs, dialogs, forms, stream)
-│   ├── hooks/                    # Custom React hooks
-│   ├── layouts/                  # Layout wrappers
-│   ├── lib/                      # Tauri command bindings, validation helpers
-│   ├── stores/                   # Project, streaming, and toast stores
+├── src/                          # Frontend code (Svelte 5 + Vite SPA)
+│   ├── main.svelte.ts            # App entry point (mounts App.svelte)
+│   ├── App.svelte                # Root component with workspace layout
+│   ├── shell/                    # App shell (MenuBar, tabs, workspaces, status bar)
+│   ├── components/               # Feature components (forms, editors, layers, canvas, machine, dialogs)
+│   ├── ui/                       # Reusable primitives (NumberField, Dialog, …)
+│   ├── state/                    # Reactive runes singletons (*.svelte.ts)
+│   ├── services/                 # Plain service functions (file operations)
+│   ├── lib/                      # Tauri/API command bindings, validation helpers
+│   ├── api/                      # OpenAPI-generated sidecar client
 │   ├── styles/                   # Global CSS + design tokens
-│   ├── tests/                    # Integration and setup files
-│   └── types/                    # TypeScript domain models
+│   ├── tests/                    # Test setup and mocks
+│   └── types/                    # Domain models, document, converters
 ├── src-tauri/                    # Rust backend
 │   ├── src/
 │   │   ├── main.rs               # Tauri command registration + app bootstrap
@@ -302,18 +310,19 @@ fiberpath_gui/
 ### Add New Layer Type
 
 1. **Define Zod schema** (`src/lib/schemas.ts`)
-2. **Add discriminated union case** to `WindLayerSchema`
-3. **Update TypeScript types** (`src/types/fiberpath.ts`)
-4. **Add form fields** in `PlanForm.tsx`
-5. **Add tests** in `schemas.test.ts`
+2. **Add discriminated union case** to the wind-definition schema
+3. **Update TypeScript types** (`src/types/project.ts`)
+4. **Add an editor component** in `src/components/editors/` and wire it into
+   `PrepareWorkspace.svelte`'s layer-properties switch
+5. **Add tests** in `schemas.test.ts` (and an editor `*.svelte.test.ts`)
 
 ### Add UI Component
 
-1. **Create component file** in `src/components/MyComponent.tsx`
-2. **Create CSS module** in `src/styles/MyComponent.module.css`
-3. **Use design tokens** from `tokens.css`
-4. **Add prop types** with TypeScript
-5. **Write tests** (if stateful)
+1. **Create component file** in `src/components/MyComponent.svelte` (or `src/ui/` for a primitive)
+2. **Declare props** with `let { ... }: Props = $props()`
+3. **Reuse global primitives/tokens**; add a scoped `<style>` block for unique chrome
+4. **Read shared state** from a `src/state/*.svelte` singleton via `$derived`
+5. **Write tests** in `MyComponent.svelte.test.ts`
 
 ## Debugging
 
@@ -324,19 +333,12 @@ fiberpath_gui/
 - Right-click → Inspect Element
 - Or press F12 in Tauri window
 
-**Zustand DevTools:**
+**Inspecting reactive state:**
 
-```typescript
-// In store definition
-devtools(
-  (set) => ({
-    /* state */
-  }),
-  { name: "ProjectStore" }
-);
-```
-
-Then use Redux DevTools extension in browser.
+State lives in plain runes singletons (`src/state/*.svelte.ts`). Import one in the
+DevTools console (or log it) to inspect it — for example
+`projectSession.document`, `projectSession.isDirty`, or `uiState.workspace`. The
+Svelte DevTools extension can also inspect component state and props live.
 
 ### Rust Debugging
 
@@ -422,7 +424,7 @@ npm run tauri dev
 
 ## Performance Profiling
 
-See [Performance Guide](guides/performance.md) for detailed profiling instructions using React DevTools Profiler.
+See [Performance Guide](guides/performance.md) for detailed profiling instructions using the browser Performance panel.
 
 ## Next Steps
 

@@ -4,12 +4,17 @@ This guide documents the actual styling architecture used in FiberPath GUI.
 
 ## Architecture Summary
 
-FiberPath GUI uses **global CSS**, not CSS Modules.
+FiberPath GUI uses **global CSS for shared design**, with **Svelte scoped
+`<style>`** for component-specific rules. It does not use CSS Modules.
 
-- Styles are loaded in a fixed order from `src/styles/index.css`.
-- Shared primitives live in `src/styles/*.css`.
-- Feature-specific rules live beside components (for example, `src/components/StreamTab/*.css`).
-- Class naming follows semantic, BEM-like patterns (`block__element--modifier`).
+- Global styles are loaded in a fixed order from `src/styles/index.css`.
+- Shared primitives and design tokens live in `src/styles/*.css`.
+- Component-specific rules live in a scoped `<style>` block inside the
+  `.svelte` file (Svelte scopes them automatically — no class-name collisions).
+  A few older feature stylesheets still exist (e.g. `src/components/StreamTab/*.css`)
+  and are being folded into their components.
+- Class naming for shared/global styles follows semantic, BEM-like patterns
+  (`block__element--modifier`).
 
 ## CSS File Structure
 
@@ -29,7 +34,26 @@ FiberPath GUI uses **global CSS**, not CSS Modules.
 
 ### Component-Level CSS
 
-Use component CSS only for behavior/layout unique to that component. Do not re-declare shared panel/button/form/dialog chrome there.
+Use a scoped `<style>` block (or, for the legacy files, component CSS) only for
+behavior/layout unique to that component. Do not re-declare shared
+panel/button/form/dialog chrome there — reach for the global primitives and
+tokens instead.
+
+```svelte
+<div class="param-form__group">
+  <!-- uses the global forms primitive -->
+  <span class="field-tooltip" title={tooltip}>ⓘ</span>
+</div>
+
+<style>
+  /* Scoped to this component — only its own unique chrome. */
+  .field-tooltip {
+    margin-left: var(--spacing-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+  }
+</style>
+```
 
 ## Token Taxonomy
 
@@ -88,8 +112,10 @@ Theme handling is token-based and centralized.
 - Dark defaults are defined in `:root` in `tokens.css`.
 - Manual light mode uses `[data-theme="light"]` overrides in `tokens.css`.
 - System fallback uses `@media (prefers-color-scheme: light)` with `:root:not([data-theme])`.
-- Runtime theme state is managed by `src/hooks/useTheme.ts`.
-- Theme selection UI is the menubar toggle in `src/components/MenuBar.tsx`.
+- Runtime theme state is the `theme` runes singleton in `src/state/theme.svelte.ts`.
+  `App.svelte` applies it with a `$effect` that sets/removes the `data-theme`
+  attribute on the document root, and an `onMount` watcher tracks the OS preference.
+- Theme selection UI is the "Cycle Theme" menubar action in `src/shell/MenuBar.svelte`.
 - Preference persistence uses `localStorage` key `fiberpath-theme` (`"dark"`, `"light"`, or system via removed key).
 
 ## Shared Primitives
@@ -143,7 +169,8 @@ Prefer these before creating new component-local styles.
 
 Default rule: **no static inline styles**.
 
-Inline `style={}` is allowed only when a value is truly runtime-dynamic and cannot be expressed safely as classes.
+An inline `style="…"` (or `style:` directive) is allowed only when a value is
+truly runtime-dynamic and cannot be expressed safely as classes.
 
 If inline style is required:
 
@@ -152,8 +179,12 @@ If inline style is required:
 
 Current approved dynamic exceptions:
 
-- `src/components/StreamTab/FileStreamingSection.tsx` (progress width computed from streaming state)
-- `src/components/layers/LayerStack.tsx` (drag-and-drop transform/position from DnD library)
+- `src/components/canvas/Viewport.svelte` (the pan/zoom `transform` computed from
+  the `panzoom` controller state)
+
+Note: the streaming progress bar now uses a native `<progress value max>`
+element, and layer reordering uses native HTML5 drag — neither needs an inline
+style anymore.
 
 ## How To Add Styles Safely
 
@@ -161,7 +192,7 @@ Use this sequence for all new UI work:
 
 1. Choose existing token(s) from `tokens.css`.
 2. Reuse a shared primitive (`panel`, `btn`, `param-form`, `dialog`) when possible.
-3. Add component-local CSS only for unique layout/behavior.
+3. Add a scoped `<style>` block in the `.svelte` file only for unique layout/behavior.
 4. Keep selectors shallow and semantic.
 5. Avoid hardcoded values when an existing token covers the need.
 

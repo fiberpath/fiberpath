@@ -4,40 +4,49 @@ Complete technical specifications for FiberPath GUI technology stack.
 
 ## Frontend Stack
 
-### React 19.x
+### Svelte 5.x
 
-**Why React:**
+**Why Svelte:**
 
-- Component-based architecture for modular UI
-- Virtual DOM for efficient updates
-- Large ecosystem of libraries and tools
-- Strong TypeScript support
+- Compiler-tracked, fine-grained reactivity (no virtual DOM, no manual render management)
+- Components compile to small, direct DOM updates
+- Scoped `<style>` per component alongside the global design tokens
+- Strong TypeScript support via `lang="ts"` and `svelte-check`
+
+The GUI is a **plain Vite single-page app** rendered inside the Tauri webview.
+There is **no SvelteKit** — no router, no SSR, no server endpoints. `main.svelte.ts`
+mounts the root `App.svelte` into `#svelte-root`.
 
 **Key Features Used:**
 
-- Functional components with hooks
-- Controlled form inputs
-- Conditional rendering
-- Effect hooks for side effects
-- Memo for performance optimization
+- Runes for reactivity: `$state`, `$derived`, `$effect`, `$props`
+- Reactive state classes (`*.svelte.ts`) as app-wide singletons
+- Snippets (`{@render ...}`) for composable slots
+- Native events (`onclick`, `oninput`) and `class:`/`bind:` directives
 
-**Example:**
+**Example (`src/components/forms/MandrelForm.svelte`):**
 
-```typescript
-export function PlanForm() {
-  const project = useProjectStore(state => state.project);
-  const updateMandrel = useProjectStore(state => state.updateMandrel);
-  return (
-    <form>
-      <input
-        type="number"
-        value={project.mandrelParameters.diameter}
-        onChange={e => updateMandrel({ diameter: Number(e.target.value) })}
-      />
-    </form>
-  );
-}
+```svelte
+<script lang="ts">
+  import { projectSession } from "../../state/project-session.svelte";
+  import { parseNumericInput } from "../../lib/numericFields";
+  import NumberField from "../../ui/NumberField.svelte";
+
+  const mandrel = $derived(projectSession.document.mandrel);
+</script>
+
+<NumberField
+  id="mandrel-diameter"
+  label="Diameter"
+  unit="mm"
+  value={mandrel.diameter}
+  oninput={(raw) => projectSession.updateMandrel({ diameter: parseNumericInput(raw) })}
+/>
 ```
+
+Reading `projectSession.document.mandrel` inside `$derived` subscribes the
+component to exactly that value — when the diameter changes, only the affected
+DOM updates. There is no selector layer and no memoization to manage.
 
 ### TypeScript 6.x
 
@@ -72,6 +81,12 @@ export function PlanForm() {
 - Exhaustive switch statements
 - Type guards for runtime safety
 
+Two type-check gates run because two file kinds carry types:
+
+- `npm run lint` → `tsc --noEmit` covers plain `.ts` modules.
+- `npm run check:svelte` → `svelte-check` covers `.svelte` components and the
+  `.svelte.ts` reactive state modules.
+
 ### Vite 8.x
 
 **Why Vite:**
@@ -84,16 +99,18 @@ export function PlanForm() {
 **Configuration:** (`vite.config.ts`)
 
 ```typescript
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+
 export default defineConfig({
-  plugins: [react()],
-  clearScreen: false,
+  plugins: [svelte()],
   server: {
     port: 5173,
     strictPort: true,
   },
   build: {
-    target: "esnext",
-    minify: !process.env.TAURI_DEBUG,
+    outDir: "dist",
+    sourcemap: true,
   },
 });
 ```
@@ -104,60 +121,40 @@ export default defineConfig({
 - HMR updates in ~50ms
 - Production build in ~10 seconds
 
-### Zustand 5.x
+### Reactive State (Svelte runes)
 
-**Why Zustand:**
+State lives in **reactive classes** under `src/state/*.svelte.ts`, exported as
+app-wide singletons. This replaces the previous Zustand stores.
 
-- Minimal boilerplate vs Redux
-- No context providers needed
-- Shallow selectors prevent re-renders
-- DevTools integration
-- TypeScript-first design
+**Why runes classes:**
 
-**Store Pattern:**
+- No store library, no provider, no selector boilerplate
+- `$state` fields are deeply reactive; `$derived` computes update automatically
+- Persisted vs. transient state is separated explicitly (see
+  [State Management](state-management.md))
+- Plain class methods replace action creators
+
+**Pattern (`src/state/project-session.svelte.ts`):**
 
 ```typescript
-interface ProjectState {
-  project: FiberPathProject | null;
-  isDirty: boolean;
-  updateMandrel: (params: Partial<MandrelParameters>) => void;
+export class ProjectSession {
+  document = $state<ProjectDocument>(createEmptyDocument());
+  filePath = $state<string | null>(null);
+  selectedLayerId = $state<string | null>(null);
+
+  // Dirtiness is derived from a revision counter, not a boolean toggled on
+  // every mutation (one less thing to forget).
+  revision = $state(0);
+  savedRevision = $state(0);
+  readonly isDirty = $derived(this.revision !== this.savedRevision);
+
+  updateMandrel(patch: Partial<Mandrel>) {
+    Object.assign(this.document.mandrel, patch);
+    this.revision++;
+  }
 }
-export const useProjectStore = create<ProjectState>()(
-  devtools(
-    (set) => ({
-      project: null,
-      isDirty: false,
-      updateMandrel: (params) =>
-        set((state) => ({
-          project: {
-            ...state.project!,
-            mandrelParameters: {
-              ...state.project!.mandrelParameters,
-              ...params,
-            },
-          },
-          isDirty: true,
-        })),
-    }),
-    { name: "ProjectStore" }
-  )
-);
-```
 
-**Selector Pattern:**
-
-```typescript
-// ❌ Bad: Re-renders on any state change
-const state = useProjectStore();
-// ✅ Good: Re-renders only when diameter changes
-const diameter = useProjectStore(
-  (state) => state.project?.mandrelParameters.diameter
-);
-// ✅ Better: Shallow comparison for objects
-const mandrel = useProjectStore(
-  (state) => state.project?.mandrelParameters,
-  shallow
-);
+export const projectSession = new ProjectSession();
 ```
 
 ### Zod 4.x
@@ -190,39 +187,36 @@ if (!result.success) {
 }
 ```
 
-### @hello-pangea/dnd 18.0.1
+### Layer reordering (native drag + keyboard)
 
-**Why Drag & Drop:**
+Layer reordering is implemented with **native HTML5 drag-and-drop plus keyboard
+arrows** in `src/components/layers/LayerList.svelte` — no drag-and-drop library.
 
-- Intuitive layer reordering in UI
-- Accessible keyboard navigation
-- Smooth animations
-
-**Usage (LayerManager):**
-
-```typescript
-<DragDropContext onDragEnd={handleDragEnd}>
-  <Droppable droppableId="layers">
-    {(provided) => (
-      <div ref={provided.innerRef} {...provided.droppableProps}>
-        {layers.map((layer, index) => (
-          <Draggable key={layer.id} draggableId={layer.id} index={index}>
-            {(provided) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.draggableProps}
-                {...provided.dragHandleProps}
-              >
-                {layer.windType}
-              </div>
-            )}
-          </Draggable>
-        ))}
-      </div>
-    )}
-  </Droppable>
-</DragDropContext>
+```svelte
+<li
+  draggable="true"
+  ondragstart={() => (dragIndex = index)}
+  ondragover={(e) => e.preventDefault()}
+  ondrop={(e) => { e.preventDefault(); onDrop(index); }}
+>
+  <span
+    class="row__handle"
+    role="button"
+    tabindex="0"
+    onkeydown={(e) => onHandleKey(e, index)}>⋮⋮</span
+  >
+</li>
 ```
+
+`onHandleKey` moves the row with ArrowUp/ArrowDown for accessibility; both paths
+call `projectSession.reorderLayers(from, to)`.
+
+### Viewport pan/zoom (native controller)
+
+The toolpath preview viewport uses a small framework-neutral transform module,
+`src/lib/panzoom.ts`, instead of a pan/zoom library. It exposes pure functions
+(`zoomAt`, `pan`, `centered`, `clampScale` with `MIN_SCALE`/`MAX_SCALE`) that
+`Viewport.svelte` applies as a CSS `transform`.
 
 ## Desktop Shell
 
@@ -239,13 +233,13 @@ if (!result.success) {
 
 ```text
 ┌────────────────────────────────┐
-│     WebView (React UI)         │  JavaScript
+│     WebView (Svelte UI)        │  JavaScript
 ├────────────────────────────────┤
 │  Tauri IPC (invoke/listen)     │  Async bridge
 ├────────────────────────────────┤
 │   Rust Backend (Commands)      │  Rust
 │   - File I/O                   │
-│   - Process spawning           │
+│   - Sidecar supervision        │
 │   - Serial port access         │
 └────────────────────────────────┘
 ```
@@ -273,41 +267,10 @@ if (!result.success) {
 - Fearless concurrency
 - Strong type system
 
-**CLI Integration:**
-
-```rust
-use std::process::Command;
-#[tauri::command]
-fn plan_project(wind_def: String) -> Result<String, String> {
-    let output = Command::new("fiberpath")
-        .arg("plan")
-        .arg(&wind_def)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
-    }
-}
-```
-
-**Streaming State:**
-
-```rust
-pub struct MarlinState {
-    port: Option<SerialPort>,
-    is_connected: bool,
-    queue: VecDeque<String>,
-}
-impl MarlinState {
-    pub fn connect(&mut self, port_name: &str) -> Result<(), String> {
-        self.port = Some(SerialPort::open(port_name)?);
-        self.is_connected = true;
-        Ok(())
-    }
-}
-```
+The Rust shell supervises the FastAPI compute sidecar and drives the Marlin
+serial path. See [CLI Integration Details](cli-integration.md) for the backend
+architecture and [Streaming State](streaming-state.md) for the Marlin state
+manager.
 
 ## Testing Stack
 
@@ -327,33 +290,39 @@ impl MarlinState {
 - Snapshot testing
 - UI mode for exploration
 
-### React Testing Library
+### Svelte Testing Library
 
-**Why RTL:**
+**Why @testing-library/svelte:**
 
 - Focus on user behavior, not implementation
 - Accessible queries (getByRole, getByLabelText)
 - Async utilities (waitFor, findBy)
+- Its `svelteTesting()` Vite plugin handles component cleanup between tests
 
 **Example:**
 
 ```typescript
-import { render, screen, fireEvent } from '@testing-library/react';
-it('should update mandrel diameter', () => {
-  render(<MandrelForm />);
-  const input = screen.getByLabelText('Diameter');
-  fireEvent.change(input, { target: { value: '200' } });
-  expect(input).toHaveValue(200);
+import { render, screen, fireEvent } from "@testing-library/svelte";
+import MandrelForm from "./MandrelForm.svelte";
+
+it("should update mandrel diameter", async () => {
+  render(MandrelForm);
+  const input = screen.getByLabelText("Diameter");
+  await fireEvent.input(input, { target: { value: "200" } });
+  expect((input as HTMLInputElement).value).toBe("200");
 });
 ```
 
 ## Build Tools
 
-### TypeScript Compiler (tsc)
+### TypeScript Compiler (tsc) + svelte-check
 
-The GUI's primary static analysis gate is `npm run lint`, which runs `tsc --noEmit`.
+Static analysis runs in two gates:
 
-**Key Flags:**
+- `npm run lint` → `tsc --noEmit` for `.ts` modules.
+- `npm run check:svelte` → `svelte-check` for `.svelte` and `.svelte.ts` files.
+
+**Key Flags (tsconfig):**
 
 - `strict: true` - All strict checks
 - `noUncheckedIndexedAccess: true` - Array access safety
@@ -375,18 +344,19 @@ Tauri-side Rust quality gates are part of the GUI workflow:
 
 ## Version Matrix
 
-| Package                | Version | Purpose            |
-| ---------------------- | ------- | ------------------ |
-| react                  | 19.2.4  | UI framework       |
-| typescript             | 6.0.2   | Type safety        |
-| vite                   | 8.0.5   | Build tool         |
-| zustand                | 5.0.12  | State management   |
-| zod                    | 4.0.0   | Runtime validation |
-| @tauri-apps/api        | 2.10.1  | Tauri bindings     |
-| @hello-pangea/dnd      | 18.0.1  | Drag & drop        |
-| vitest                 | 4.0.0   | Test runner        |
-| @testing-library/react | 16.3.2  | Component testing  |
-| stylelint              | 17.6.0  | CSS linting        |
+| Package                      | Version | Purpose                |
+| ---------------------------- | ------- | ---------------------- |
+| svelte                       | 5.56.4  | UI framework           |
+| @sveltejs/vite-plugin-svelte | 7.1.2   | Svelte build/HMR       |
+| svelte-check                 | 4.7.1   | `.svelte` type checks  |
+| typescript                   | 6.0.3   | Type safety            |
+| vite                         | 8.1.0   | Build tool             |
+| zod                          | 4.4.3   | Runtime validation     |
+| @tauri-apps/api              | 2.11.1  | Tauri bindings         |
+| openapi-fetch                | 0.14.1  | Typed sidecar client   |
+| vitest                       | 4.1.4   | Test runner            |
+| @testing-library/svelte      | 5.4.2   | Component testing       |
+| stylelint                    | 17.13.0 | CSS linting            |
 
 ## Platform Support
 
@@ -412,8 +382,10 @@ Tauri-side Rust quality gates are part of the GUI workflow:
 
 ### Bundle Size
 
-- **Development:** ~15 MB
-- **Production:** ~3-5 MB (Tauri) + ~2 MB (React bundle)
+- **Production JS:** ~308 kB (down from ~599 kB under React — a 48% drop, mostly
+  from removing the React runtime, Zustand, and the drag-and-drop/pan-zoom libs)
+- **Production CSS:** ~64 kB
+- **Tauri shell:** ~3-5 MB
 - **Installer:** ~10-15 MB
 
 ### Startup Time
