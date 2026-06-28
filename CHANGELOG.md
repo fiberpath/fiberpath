@@ -34,6 +34,15 @@ The format is based on Keep a Changelog, and this project follows semantic versi
   live stream gracefully; the old M0/M108 pause/resume-restart flow is dropped
   (interactive pause lives in the desktop GUI).
 
+### Removed
+
+- The legacy in-repo machine code is gone now that all three consumers run on
+  `marlin-host` + the API sidecar: `fiberpath/execution/marlin.py` (the
+  optimistic `MarlinStreamer`), `fiberpath_cli/interactive.py` and the
+  `fiberpath interactive` CLI command (the GUI's old stdio-JSON protocol), and
+  their tests. fiberpath no longer depends on `pyserial` directly (it comes
+  transitively via `marlin-host[serial]`, which also provides port enumeration).
+
 ## [0.8.0] - 2026-06-26
 
 ### Changed

@@ -63,8 +63,6 @@ def get_hidden_imports() -> list[str]:
         "fiberpath.config",
         "fiberpath.config.schemas",
         "fiberpath.config.validator",
-        "fiberpath.execution",
-        "fiberpath.execution.marlin",
         "fiberpath.gcode",
         "fiberpath.gcode.dialects",
         "fiberpath.gcode.generator",
@@ -81,7 +79,6 @@ def get_hidden_imports() -> list[str]:
         # CLI packages
         "fiberpath_cli",
         "fiberpath_cli.main",
-        "fiberpath_cli.interactive",
         "fiberpath_cli.plan",
         "fiberpath_cli.plot",
         "fiberpath_cli.simulate",
