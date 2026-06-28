@@ -143,7 +143,7 @@ fiberpath stream output.gcode --dry-run
 fiberpath stream output.gcode --port COM5 --baud-rate 250000
 ```
 
-FiberPath automatically waits for Marlin's startup sequence (`M92`, `M203`, etc.) before streaming. Use `Ctrl+C` to pause—FiberPath issues `M0` and resumes with `M108`.
+Streaming runs through the [`marlin-host`](https://github.com/fiberpath/marlin-host) library, which handles the connection handshake (waiting for Marlin's startup banner and negotiating capabilities) plus reliable line-numbered/checksummed framing. Press `Ctrl+C` to abort a live stream gracefully — it stops before the next line. Interactive pause/resume lives in the desktop GUI.
 
 ### Using the Desktop GUI
 
@@ -181,45 +181,48 @@ fiberpath-api --port 8000        # Requires fiberpath[api] install
 
 ## Architecture
 
-FiberPath consists of four coordinated components:
+FiberPath is organized as a planning core and a machine-protocol library, fronted by three parallel interfaces (GUI, CLI, API):
 
 ```text
 ┌─────────────────────────────────────────────────┐
-│              Desktop GUI (Tauri + Svelte)       │
-│  • Visual layer editor                          │
-│  • 2D preview canvas                            │
-│  • Serial communication controls                │
-└───────────────┬─────────────────────────────────┘
-                │ IPC calls
-                ▼
-┌─────────────────────────────────────────────────┐
-│           CLI (Typer + Python)                  │
-│  • plan   • plot   • simulate   • stream        │
-└───────────────┬─────────────────────────────────┘
-                │ imports
-                ▼
-┌─────────────────────────────────────────────────┐
-│           Core Engine (Python)                  │
-│  • Winding path planning (hoop/helical/skip)    │
-│  • Layer strategies                             │
-│  • G-code generation                            │
-└─────────────────────────────────────────────────┘
-                ▲
-                │ imports
-┌───────────────┴─────────────────────────────────┐
-│           API Server (FastAPI)                  │
-│  • RESTful planning endpoints                   │
-│  • JSON input/output                            │
-│  • Optional deployment for web integration      │
-└─────────────────────────────────────────────────┘
+│            Desktop GUI (Tauri + Svelte)          │
+│  • Visual layer editor   • 2D preview canvas     │
+│  • Machine control panel (connect/stream/e-stop) │
+└───────────────────────┬──────────────────────────┘
+                        │ HTTP (typed client; polls a job resource)
+                        ▼
+┌──────────────────────────────────────────────────┐
+│   Local API sidecar (FastAPI) — bundled in app    │
+│  • Planning / validation / plot endpoints         │
+│  • Machine control: owns the serial port,         │
+│    /machine/* routes + background job runner      │
+└──────────┬─────────────────────────────┬──────────┘
+           │ imports                      │ uses
+           ▼                              ▼
+┌────────────────────────────┐  ┌────────────────────────────┐
+│      Core Engine (Python)   │  │  marlin-host (PyPI library) │
+│  • Winding path planning    │  │  • Marlin serial-protocol   │
+│    (hoop / helical / skip)  │  │    host: reliable framing,  │
+│  • Layer strategies         │  │    handshake, M112 e-stop   │
+│  • G-code generation        │  │                             │
+└────────────────────────────┘  └────────────────────────────┘
+           ▲                              ▲
+           └──────────────┬───────────────┘
+                          │ imports
+┌─────────────────────────┴────────────────────────┐
+│              CLI (Typer + Python)                  │
+│  • plan   • plot   • simulate   • stream           │
+└────────────────────────────────────────────────────┘
 ```
 
 **Design Principles:**
 
-- **CLI and API are parallel interfaces** to the same Core Engine
-- **GUI calls CLI via IPC** for offline operation (no server required)
+- **GUI, CLI, and API are parallel interfaces** over the same Core Engine and `marlin-host` library
+- **The desktop GUI drives a bundled local API over HTTP** — no separate server to run, and no bespoke subprocess protocol
+- **The sidecar owns the serial port**; the GUI polls a job resource for streaming progress rather than holding the connection itself
+- **Machine I/O lives in [`marlin-host`](https://github.com/fiberpath/marlin-host)** — a standalone, conformance-tested library, kept independent of FiberPath
 - **Core is deterministic** and thoroughly tested
-- **Modular architecture** allows using components independently
+- **Modular architecture** lets each component be used independently
 
 See [Architecture Documentation](https://fiberpath.org/fiberpath/architecture/overview/) for detailed design rationale.
 
