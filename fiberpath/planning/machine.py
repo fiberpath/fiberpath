@@ -1,4 +1,13 @@
-"""G-code aware machine abstraction used for planning."""
+"""Machine abstraction that records a Motion IR program during planning.
+
+The strategies drive this exactly as before (``move`` / ``set_position`` /
+``zero_axes`` / ``insert_comment`` / ``set_feed_rate``); it now records a list of
+:class:`~fiberpath.planning.ir.Move` s (one per emitted line) instead of G-code
+strings. ``serialize(program, dialect)`` turns those into text. The carriage
+segmentation, all-axis completion, and the time/tow accumulation stay here so the
+IR is post-segmentation (one motion Move == one ``G0`` line) and motion math has
+a single home.
+"""
 
 from __future__ import annotations
 
@@ -6,14 +15,8 @@ import math
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from fiberpath.math_utils import strip_precision
-
-from .helpers import (
-    Axis,
-    get_axis_letter,
-    interpolate_coordinates,
-    serialize_coordinate,
-)
+from .helpers import Axis, interpolate_coordinates, serialize_coordinate
+from .ir import Move, MoveKind
 
 if TYPE_CHECKING:
     from fiberpath.gcode.dialects import MarlinDialect
@@ -27,7 +30,7 @@ class WinderMachine:
         dialect: MarlinDialect | None = None,
     ) -> None:
         self._verbose = verbose_output
-        self._gcode: list[str] = []
+        self._moves: list[Move] = []
         self._feed_rate_mmpm = 0.0
         self._total_time_s = 0.0
         self._total_tow_length_mm = 0.0
@@ -45,18 +48,26 @@ class WinderMachine:
             dialect = MARLIN_XAB_STANDARD
         self._dialect = dialect
 
-    def get_gcode(self) -> list[str]:
-        return self._gcode.copy()
+    def get_moves(self) -> list[Move]:
+        return self._moves.copy()
 
-    def add_raw_gcode(self, command: str) -> None:
-        self._gcode.append(command)
+    def get_gcode(self) -> list[str]:
+        """Render the recorded moves to raw G-code lines (no header).
+
+        Kept for the strategy-level layer fixtures; the full-program path goes
+        through ``plan_wind`` -> ``serialize``.
+        """
+        from fiberpath.gcode.serializer import render_move
+
+        mapping = self._dialect.axis_mapping
+        return [render_move(move, mapping) for move in self._moves]
 
     def insert_comment(self, text: str) -> None:
-        self._gcode.append(f"; {text}")
+        self._moves.append(Move(MoveKind.COMMENT, text=text))
 
     def set_feed_rate(self, feed_rate_mmpm: float) -> None:
         self._feed_rate_mmpm = feed_rate_mmpm
-        self._gcode.append(f"G0 F{strip_precision(feed_rate_mmpm)}")
+        self._moves.append(Move(MoveKind.SET_FEED, feed=feed_rate_mmpm))
 
     def move(self, position: Mapping[Axis, float]) -> None:
         complete_end = self._last_position.copy()
@@ -73,7 +84,7 @@ class WinderMachine:
                     f"{serialize_coordinate(self._last_position)} -> "
                     f"{serialize_coordinate(complete_end)}"
                 )
-            # Pass complete_end so all axes are included in the G-code command
+            # Pass complete_end so all axes are included in the move
             self._move_segment(complete_end)
             return
 
@@ -91,12 +102,11 @@ class WinderMachine:
             self._move_segment(intermediate)
 
     def set_position(self, position: Mapping[Axis, float]) -> None:
-        command_parts = ["G92"]
+        targets: dict[Axis, float] = {}
         for axis, value in position.items():
-            axis_letter = get_axis_letter(axis, self._dialect.axis_mapping)
-            command_parts.append(f"{axis_letter}{strip_precision(value)}")
+            targets[axis] = value
             self._last_position[axis] = value
-        self._gcode.append(" ".join(command_parts))
+        self._moves.append(Move(MoveKind.SET_POSITION, targets=targets))
 
     def zero_axes(self, current_angle_degrees: float) -> None:
         self.set_position(
@@ -122,12 +132,11 @@ class WinderMachine:
         return self._mandrel_diameter
 
     def _move_segment(self, position: Mapping[Axis, float]) -> None:
-        command_parts = ["G0"]
+        targets: dict[Axis, float] = {}
         total_distance_sq = 0.0
         tow_length_sq = 0.0
         for axis, value in position.items():
-            axis_letter = get_axis_letter(axis, self._dialect.axis_mapping)
-            command_parts.append(f"{axis_letter}{strip_precision(value)}")
+            targets[axis] = value
             move_component = value - self._last_position[axis]
 
             if axis == Axis.MANDREL:
@@ -152,4 +161,4 @@ class WinderMachine:
 
         self._total_time_s += math.sqrt(total_distance_sq) / self._feed_rate_mmpm * 60.0
         self._total_tow_length_mm += math.sqrt(tow_length_sq)
-        self._gcode.append(" ".join(command_parts))
+        self._moves.append(Move(MoveKind.RAPID, targets=targets))

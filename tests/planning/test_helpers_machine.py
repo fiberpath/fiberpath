@@ -54,10 +54,8 @@ def test_machine_requires_feed_rate_before_moves() -> None:
         machine.move({Axis.CARRIAGE: 1.0})
 
 
-def test_machine_add_raw_gcode_and_mandrel_accessors() -> None:
+def test_machine_mandrel_accessors() -> None:
     machine = WinderMachine(42.0)
-    machine.add_raw_gcode("G4 P500")
-
-    code = machine.get_gcode()
-    assert code[-1] == "G4 P500"
     assert machine.get_mandrel_diameter() == pytest.approx(42.0)
+    machine.set_mandrel_diameter(50.0)
+    assert machine.get_mandrel_diameter() == pytest.approx(50.0)

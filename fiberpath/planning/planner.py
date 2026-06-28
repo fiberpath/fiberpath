@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING
 
 from fiberpath.config import WindDefinition
 from fiberpath.config.schemas import HelicalLayer, MandrelParameters
-from fiberpath.gcode.generator import sanitize_program
+from fiberpath.gcode.serializer import serialize
 
 from .calculations import HelicalKinematics
+from .helpers import Axis
+from .ir import Move, MoveKind, Program, ProgramMeta
 from .layer_strategies import build_layer_summary, dispatch_layer
 from .machine import WinderMachine
 from .validators import (
@@ -63,11 +65,6 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
         dialect=options.dialect,
     )
 
-    # Generate initial position command using correct axis letters
-    mapping = options.dialect.axis_mapping
-    init_cmd = f"G0 {mapping.carriage}0 {mapping.mandrel}0 {mapping.delivery_head}0"
-    program: list[str] = [definition.dump_header(), init_cmd]
-
     machine.set_feed_rate(definition.default_feed_rate)
     layer_metrics: list[LayerMetrics] = []
     encountered_terminal = False
@@ -92,7 +89,7 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
         summary = build_layer_summary(index, len(definition.layers), layer)
         machine.insert_comment(summary)
 
-        pre_commands = len(machine.get_gcode())
+        pre_commands = len(machine.get_moves())
         pre_time = machine.get_gcode_time_s()
         pre_tow = machine.get_tow_length_m()
 
@@ -108,7 +105,7 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
             LayerMetrics(
                 index=index,
                 wind_type=layer.wind_type,
-                commands=len(machine.get_gcode()) - pre_commands,
+                commands=len(machine.get_moves()) - pre_commands,
                 time_s=machine.get_gcode_time_s() - pre_time,
                 cumulative_time_s=machine.get_gcode_time_s(),
                 tow_m=machine.get_tow_length_m() - pre_tow,
@@ -119,14 +116,26 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
 
         if getattr(layer, "terminal", False):
             encountered_terminal = True
-    program.extend(machine.get_gcode())
 
+    # The init move (all-zero rapid) is the program's first line; the header is
+    # carried structurally in ProgramMeta and rendered by serialize().
+    init_move = Move(
+        MoveKind.RAPID,
+        targets={Axis.CARRIAGE: 0.0, Axis.MANDREL: 0.0, Axis.DELIVERY_HEAD: 0.0},
+    )
+    meta = ProgramMeta(
+        mandrel_diameter=definition.mandrel_parameters.diameter,
+        wind_length=definition.mandrel_parameters.wind_length,
+        tow_width=definition.tow_parameters.width,
+        tow_thickness=definition.tow_parameters.thickness,
+    )
+    program = Program(meta=meta, moves=[init_move, *machine.get_moves()])
+    commands = serialize(program, options.dialect)
     if options.verbose:
-        program.insert(0, "; Verbose output enabled")
+        commands.insert(0, "; Verbose output enabled")
 
-    sanitized_commands = sanitize_program(program)
     return PlanResult(
-        commands=sanitized_commands,
+        commands=commands,
         total_time_s=machine.get_gcode_time_s(),
         total_tow_m=machine.get_tow_length_m(),
         layers=layer_metrics,
