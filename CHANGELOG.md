@@ -18,6 +18,14 @@ The format is based on Keep a Changelog, and this project follows semantic versi
   and `POST /machine/estop` (out-of-band M112). A background job runner streams
   to the board with a lock serializing manual commands against the job.
 
+### Changed
+
+- The `fiberpath stream` CLI now streams through the `marlin-host` library
+  (reliable line-numbered/checksummed framing, bounded waits, real connection
+  handshake) instead of the in-repo optimistic streamer. Ctrl+C now aborts a
+  live stream gracefully; the old M0/M108 pause/resume-restart flow is dropped
+  (interactive pause lives in the desktop GUI).
+
 ## [0.8.0] - 2026-06-26
 
 ### Changed

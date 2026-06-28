@@ -95,7 +95,10 @@ def get_hidden_imports() -> list[str]:
         "rich",
         "numpy",
         "PIL",
+        # Marlin streaming: the host library + pyserial's dynamic platform backend.
+        "marlin_host",
         "serial",
+        "serial.tools.list_ports",
     ]
 
 
@@ -135,6 +138,8 @@ def build_executable() -> None:
         "numpy",
         "--collect-all",
         "PIL",
+        "--collect-all",
+        "marlin_host",
         "--collect-all",
         "serial",
         "--collect-submodules",

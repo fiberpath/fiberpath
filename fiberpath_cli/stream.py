@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from fiberpath.execution import MarlinStreamer, StreamError, StreamProgress
+from marlin_host import HostError, MarlinHost, SerialTransport
 
 from .output import echo_json
 
@@ -26,7 +26,7 @@ def stream_command(
         10.0,
         "--timeout",
         "-t",
-        help="Response timeout in seconds for slow moves.",
+        help="Per-response timeout in seconds for slow moves.",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -40,93 +40,76 @@ def stream_command(
         help="Emit final summary as JSON (progress lines suppressed).",
     ),
 ) -> None:
-    """Stream the provided G-code file to a Marlin device."""
+    """Stream the provided G-code file to a Marlin device.
 
+    Reliable framing (line numbers + checksum), bounded waits, and the connection
+    handshake are handled by the marlin-host library. Press Ctrl+C to abort a live
+    stream gracefully (it stops before the next line); for interactive pause/resume
+    use the desktop GUI.
+    """
     if not dry_run and port is None:
         raise typer.BadParameter("--port is required for live streaming", param_hint="--port")
 
-    commands = gcode_file.read_text(encoding="utf-8").splitlines()
-    log_callback = None if json_output else (typer.echo if verbose else None)
-    streamer = MarlinStreamer(
-        port=port,
-        baud_rate=baud_rate,
-        response_timeout_s=response_timeout,
-        log=log_callback,
-    )
+    program = (line.strip() for line in gcode_file.read_text(encoding="utf-8").splitlines())
+    commands = [line for line in program if line and not line.startswith(";")]
+    total = len(commands)
+    if total == 0:
+        typer.echo("Streaming failed: G-code program contained no commands", err=True)
+        raise typer.Exit(code=1)
 
-    progress_verbose = verbose or dry_run
-
+    sent = 0
+    aborted = False
+    host: MarlinHost | None = None
     try:
-        # Connect if not dry run
-        if not dry_run:
-            streamer.connect()
-
-        # Stream commands with pause/resume support
-        try:
-            for update in streamer.iter_stream(commands, dry_run=dry_run):
-                if not json_output and _should_print_progress(update, verbose=progress_verbose):
-                    typer.echo(_format_progress(update))
-        except KeyboardInterrupt:  # pragma: no cover - user-driven flow
-            if dry_run:
-                raise
-            typer.echo("\nPause requested (Ctrl+C). Sending M0 ...")
-            _pause_and_prompt(streamer)
-            # Reset and retry streaming
-            streamer.reset_progress()
-            for update in streamer.iter_stream(commands, dry_run=dry_run):
-                if not json_output and _should_print_progress(update, verbose=progress_verbose):
-                    typer.echo(_format_progress(update))
-    except StreamError as exc:
+        if dry_run:
+            for sent, command in enumerate(commands, start=1):
+                if not json_output:
+                    typer.echo(f"[{sent}/{total}] (dry-run) {command}")
+        else:
+            assert port is not None  # guarded above
+            host = MarlinHost(
+                SerialTransport(port, baud_rate, timeout=response_timeout),
+                reliable=True,
+                idle_timeout=response_timeout,
+            )
+            host.connect()
+            try:
+                for progress in host.stream(commands):
+                    sent = progress.commands_sent
+                    if not json_output and _should_print(sent, total, verbose=verbose):
+                        typer.echo(f"[{sent}/{total}] (live) {progress.command}")
+            except KeyboardInterrupt:  # pragma: no cover - interactive abort
+                host.stop()
+                aborted = True
+                if not json_output:
+                    typer.echo(f"\nAborted at {sent}/{total} (Ctrl+C).")
+    except HostError as exc:
         typer.echo(f"Streaming failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     finally:
-        streamer.close()
+        if host is not None:
+            host.close()
 
     summary = {
-        "status": "dry-run" if dry_run else "live",
-        "commands": streamer.commands_sent,
-        "total": streamer.commands_total,
+        "status": "dry-run" if dry_run else ("aborted" if aborted else "live"),
+        "commands": sent,
+        "total": total,
         "baudRate": baud_rate,
         "dryRun": dry_run,
     }
-
     if json_output:
         echo_json(summary)
         return
 
-    status = "Dry-run" if dry_run else "Streamed"
-    typer.echo(
-        f"{status} {streamer.commands_sent}/{streamer.commands_total} commands at {baud_rate} baud."
-    )
+    status = "Dry-run" if dry_run else ("Aborted" if aborted else "Streamed")
+    typer.echo(f"{status} {sent}/{total} commands at {baud_rate} baud.")
 
 
-def _should_print_progress(progress: StreamProgress, *, verbose: bool) -> bool:
+def _should_print(sent: int, total: int, *, verbose: bool) -> bool:
     if verbose:
         return True
-    if progress.commands_sent in {1, progress.commands_total}:
+    if sent in {1, total}:
         return True
-    if progress.commands_total <= PROGRESS_INTERVAL:
+    if total <= PROGRESS_INTERVAL:
         return False
-    return progress.commands_sent % PROGRESS_INTERVAL == 0
-
-
-def _format_progress(progress: StreamProgress) -> str:
-    phase = "dry-run" if progress.dry_run else "live"
-    return f"[{progress.commands_sent}/{progress.commands_total}] ({phase}) {progress.command}"
-
-
-def _pause_and_prompt(streamer: MarlinStreamer) -> None:
-    try:
-        streamer.pause()
-    except StreamError as exc:
-        raise typer.Exit(code=1) from exc
-
-    if not typer.confirm("Resume streaming?", default=True):
-        typer.echo("Stopping stream without resuming.")
-        raise typer.Exit(code=0)
-
-    typer.echo("Resuming (sending M108)...")
-    try:
-        streamer.resume()
-    except StreamError as exc:
-        raise typer.Exit(code=1) from exc
+    return sent % PROGRESS_INTERVAL == 0
