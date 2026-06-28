@@ -1,0 +1,66 @@
+{
+  "examples/simple_cylinder/expected.gcode": {
+    "sim": {
+      "commands_executed": 1014,
+      "moves": 1006,
+      "estimated_time_s": 421.91725,
+      "total_distance_mm": 63287.587509,
+      "tow_length_mm": 63287.587509,
+      "average_feed_rate_mmpm": 9000.0
+    },
+    "plot": {
+      "mandrel_length_mm": 500.0,
+      "tow_width_mm": 7.0,
+      "segments_rendered": 1291,
+      "digest": "f5516bc0b68cd25c8ab7014c05109c926f8183ad00ba1d25ee4b56835a73900f"
+    }
+  },
+  "examples/sized_simple_cylinder/expected.gcode": {
+    "sim": {
+      "commands_executed": 1640,
+      "moves": 1632,
+      "estimated_time_s": 1095.979084,
+      "total_distance_mm": 164396.862549,
+      "tow_length_mm": 164396.862549,
+      "average_feed_rate_mmpm": 9000.0
+    },
+    "plot": {
+      "mandrel_length_mm": 812.8,
+      "tow_width_mm": 9.525,
+      "segments_rendered": 1973,
+      "digest": "6f40cee3265dfb3ec422295495cde31a98bd7b1d8896fb4400fa12fcf0554488"
+    }
+  },
+  "examples/multi_layer/expected.gcode": {
+    "sim": {
+      "commands_executed": 35937,
+      "moves": 35836,
+      "estimated_time_s": 1733.976821,
+      "total_distance_mm": 260096.523132,
+      "tow_length_mm": 260096.523132,
+      "average_feed_rate_mmpm": 9000.0
+    },
+    "plot": {
+      "mandrel_length_mm": 940.0,
+      "tow_width_mm": 7.0,
+      "segments_rendered": 36935,
+      "digest": "cebd9888e8b71cd0a9a6f1a1572c9ea0ee976751f4d8efb593485aff3b2831f0"
+    }
+  },
+  "examples/rocketry/AvBay(470mm)single.gcode": {
+    "sim": {
+      "commands_executed": 76270,
+      "moves": 75963,
+      "estimated_time_s": 6772.408526,
+      "total_distance_mm": 338620.426318,
+      "tow_length_mm": 338620.426318,
+      "average_feed_rate_mmpm": 3000.0
+    },
+    "plot": {
+      "mandrel_length_mm": 630.0,
+      "tow_width_mm": 5.7,
+      "segments_rendered": 76486,
+      "digest": "bb2c0a976a7a687cda6887599875f5f725e9774f9b1dded6f7528a4262fbea5b"
+    }
+  }
+}
