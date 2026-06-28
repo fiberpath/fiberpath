@@ -1,17 +1,8 @@
 <script lang="ts">
-  import { machineSession as m } from "../state/machine-session.svelte";
   import ConnectionSection from "../components/machine/ConnectionSection.svelte";
   import ManualControlSection from "../components/machine/ManualControlSection.svelte";
   import FileStreamingSection from "../components/machine/FileStreamingSection.svelte";
   import StreamLog from "../components/machine/StreamLog.svelte";
-
-  // Subscribe to Tauri stream lifecycle events while the workspace is mounted.
-  $effect(() => {
-    const pending = m.subscribe();
-    return () => {
-      pending.then((cleanup) => cleanup());
-    };
-  });
 </script>
 
 <div class="machine">

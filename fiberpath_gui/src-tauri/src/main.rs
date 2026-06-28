@@ -4,9 +4,7 @@ mod api_path;
 mod api_sidecar;
 mod cli_path;
 mod cli_process;
-mod marlin;
 
-use marlin::MarlinState;
 use serde_json::Value;
 use std::fs;
 use std::process::Output;
@@ -266,13 +264,11 @@ async fn check_backend_health(app: AppHandle) -> Result<BackendHealthResponse, S
 }
 
 fn main() {
-    let marlin_state: MarlinState = Arc::new(Mutex::new(None));
     let api_sidecar_state: api_sidecar::ApiSidecarState = Arc::new(Mutex::new(None));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(marlin_state)
         .manage(api_sidecar_state)
         .setup(|app| {
             // Warm the sidecar in the background so the first frontend call is
@@ -293,16 +289,6 @@ fn main() {
             load_wind_file,
             check_backend_health,
             get_cli_diagnostics,
-            marlin::marlin_list_ports,
-            marlin::marlin_start_interactive,
-            marlin::marlin_connect,
-            marlin::marlin_disconnect,
-            marlin::marlin_send_command,
-            marlin::marlin_stream_file,
-            marlin::marlin_pause,
-            marlin::marlin_resume,
-            marlin::marlin_stop,
-            marlin::marlin_cancel,
             api_sidecar::api_base_url,
         ])
         .run(tauri::generate_context!())

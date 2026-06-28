@@ -17,7 +17,7 @@
       class="btn btn--danger btn--small"
       {disabled}
       title="Emergency stop (M112) — WARNING: disconnects the controller"
-      onclick={() => m.sendCommand("M112")}>E-Stop</button
+      onclick={() => m.emergencyStop()}>E-Stop</button
     >
     <button class="btn btn--secondary btn--small" {disabled} title="Disable stepper motors (M18)" onclick={() => m.sendCommand("M18")}>Motors</button>
   </div>

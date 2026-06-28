@@ -2,10 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../lib/marlin-api", () => ({
   listSerialPorts: vi.fn(() => Promise.resolve([])),
-  onStreamStarted: vi.fn(() => Promise.resolve(() => {})),
-  onStreamProgress: vi.fn(() => Promise.resolve(() => {})),
-  onStreamComplete: vi.fn(() => Promise.resolve(() => {})),
-  onStreamError: vi.fn(() => Promise.resolve(() => {})),
 }));
 
 import { render, screen } from "@testing-library/svelte";

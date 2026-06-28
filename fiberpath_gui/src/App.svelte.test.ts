@@ -5,10 +5,6 @@ import { render, screen, fireEvent } from "@testing-library/svelte";
 // don't reach for a Tauri runtime.
 vi.mock("./lib/marlin-api", () => ({
   listSerialPorts: vi.fn(() => Promise.resolve([])),
-  onStreamStarted: vi.fn(() => Promise.resolve(() => {})),
-  onStreamProgress: vi.fn(() => Promise.resolve(() => {})),
-  onStreamComplete: vi.fn(() => Promise.resolve(() => {})),
-  onStreamError: vi.fn(() => Promise.resolve(() => {})),
 }));
 // CLI-health polling invokes a Tauri command on mount; stub it healthy.
 vi.mock("@tauri-apps/api/core", () => ({

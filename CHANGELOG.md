@@ -20,6 +20,14 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ### Changed
 
+- The desktop GUI now drives Marlin **through the local API sidecar** instead of
+  a Rust-owned `fiberpath interactive` stdio subprocess. The frontend calls the
+  generated typed client (`/machine/*`) and polls `GET /machine/jobs/{id}?since=`
+  for streaming progress (replacing the bespoke Tauri `stream-*` events). The
+  Rust `marlin.rs` bridge (the response router, subprocess manager, and its ten
+  `marlin_*` Tauri commands — ~660 lines) is deleted; the Tauri shell keeps only
+  the window, file pickers, and the compute-sidecar supervisor. A connection
+  panel now shows the controller's firmware/capabilities (#146).
 - The `fiberpath stream` CLI now streams through the `marlin-host` library
   (reliable line-numbered/checksummed framing, bounded waits, real connection
   handshake) instead of the in-repo optimistic streamer. Ctrl+C now aborts a

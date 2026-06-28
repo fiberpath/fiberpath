@@ -3,8 +3,8 @@
 //! The sidecar (`fiberpath-api`) binds an ephemeral 127.0.0.1 port and prints a
 //! one-line JSON handshake (`{"event":"listening","host","port"}`) to stdout. We
 //! spawn it, read that handshake to learn the base URL, drain its pipes, and
-//! reap it on Drop. A dead sidecar is respawned on demand. Process supervision
-//! mirrors `marlin.rs`; HTTP readiness (`GET /health`) is polled by the frontend.
+//! reap it on Drop. A dead sidecar is respawned on demand. HTTP readiness
+//! (`GET /health`) is polled by the frontend.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Stdio};

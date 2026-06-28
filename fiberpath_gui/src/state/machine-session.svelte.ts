@@ -1,5 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import * as marlin from "../lib/marlin-api";
+import type { SerialPort, JobStatus } from "../lib/marlin-api";
+import { loadWindFile } from "../lib/commands";
 import { createStreamFeedback } from "../lib/streamFeedback";
 import { notifications } from "./notifications.svelte";
 import {
@@ -8,7 +10,6 @@ import {
   PROGRESS_MILESTONE_PERCENTAGES,
   LOG_PROGRESS_EVERY_N_COMMANDS,
 } from "../lib/constants";
-import type { SerialPort } from "../lib/tauri-types";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "paused";
 
@@ -25,11 +26,24 @@ export interface StreamProgress {
   currentCommand: string;
 }
 
+/** How often the streaming poll loop fetches job status. */
+const POLL_INTERVAL_MS = 250;
+
+/** Job states that end the poll loop (terminal). */
+function isTerminalJobState(state: string): boolean {
+  return (
+    state === "completed" ||
+    state === "cancelled" ||
+    state === "error" ||
+    state === "disconnected"
+  );
+}
+
 /**
- * Reactive Marlin machine control — consolidates the Zustand streamStore + the
- * three React action hooks + useStreamEvents into one session. Reuses the
- * framework-agnostic `marlin-api` (Tauri bridge) and `streamFeedback` (log/toast
- * messages) unchanged.
+ * Reactive Marlin machine control. Talks to the local HTTP API sidecar through
+ * `marlin-api` (typed client) and reuses `streamFeedback` for log/toast copy.
+ * Streaming progress is polled from `getJob()` rather than pushed over Tauri
+ * events.
  */
 export class MachineSession {
   // Connection
@@ -38,6 +52,10 @@ export class MachineSession {
   selectedPort = $state<string | null>(null);
   baudRate = $state<number>(DEFAULT_BAUD_RATE);
   refreshing = $state(false);
+
+  // Connected controller info (#146 connection panel)
+  firmware = $state<string | null>(null);
+  capabilities = $state<Record<string, boolean>>({});
 
   // Streaming
   isStreaming = $state(false);
@@ -60,6 +78,11 @@ export class MachineSession {
     addToast: (t) => notifications.push(t.type, t.message, t.duration),
   });
 
+  // Active job + poll loop bookkeeping
+  #jobId: string | null = null;
+  #since = 0;
+  #pollTimer: ReturnType<typeof setTimeout> | null = null;
+
   readonly isConnected = $derived(this.status === "connected" || this.status === "paused");
   readonly isPaused = $derived(this.status === "paused");
   readonly manualControlsEnabled = $derived(
@@ -81,10 +104,17 @@ export class MachineSession {
     this.isStreaming = false;
   }
 
-  #resetAfterCancel() {
+  /** Tear down the active job + poll loop. `disconnected` is true after an e-stop. */
+  #endJob(opts?: { disconnected?: boolean }) {
+    if (this.#pollTimer) {
+      clearTimeout(this.#pollTimer);
+      this.#pollTimer = null;
+    }
+    this.#jobId = null;
+    this.#since = 0;
     this.isStreaming = false;
-    this.status = "connected";
     this.progress = null;
+    this.status = opts?.disconnected ? "disconnected" : "connected";
   }
 
   clearLog() {
@@ -117,13 +147,16 @@ export class MachineSession {
     this.status = "connecting";
     this.#feedback.connection.connecting(this.selectedPort, this.baudRate);
     try {
-      await marlin.startInteractive();
-      await marlin.connectMarlin(this.selectedPort, this.baudRate);
+      const info = await marlin.connectMarlin(this.selectedPort, this.baudRate);
       this.status = "connected";
+      this.firmware = info.firmware || null;
+      this.capabilities = info.capabilities ?? {};
       this.#feedback.connection.connected(this.selectedPort, this.baudRate);
       this.#clearStreamingState();
     } catch (e) {
       this.status = "disconnected";
+      this.firmware = null;
+      this.capabilities = {};
       this.#feedback.connection.failed(String(e));
     }
   }
@@ -132,6 +165,9 @@ export class MachineSession {
     try {
       await marlin.disconnectMarlin();
       this.status = "disconnected";
+      this.firmware = null;
+      this.capabilities = {};
+      this.#endJob({ disconnected: true });
       this.#clearStreamingState();
       this.#feedback.connection.disconnected();
     } catch (e) {
@@ -148,7 +184,6 @@ export class MachineSession {
       const responses = await marlin.sendCommand(gcode);
       responses.forEach((r) => this.#feedback.command.response(r));
       if (gcode === "G28") this.#feedback.command.homingComplete();
-      else if (gcode === "M112") this.#feedback.command.emergencyStop();
     } catch (e) {
       this.#feedback.command.failed(String(e));
     } finally {
@@ -188,20 +223,106 @@ export class MachineSession {
   }
 
   async startStream() {
-    if (!this.filePath || !this.isConnected) return;
+    if (!this.filePath || !this.isConnected || this.isStreaming) return;
+    let gcode: string;
     try {
-      await marlin.streamFile(this.filePath);
+      // Read the selected program off disk via the same fs bridge as wind files,
+      // then hand the G-code text to the API (the sidecar owns no file access).
+      gcode = await loadWindFile(this.filePath);
+    } catch (e) {
+      this.#feedback.streaming.startFailed(String(e));
+      return;
+    }
+    try {
+      const { job_id, total } = await marlin.startJob(gcode);
+      this.#jobId = job_id;
+      this.#since = 0;
+      this.isStreaming = true;
+      this.status = "connected";
+      this.progress = { sent: 0, total, currentCommand: "" };
       this.#feedback.streaming.startedToast();
+      this.#feedback.streaming.startedEvent(this.selectedFile ?? this.filePath, total);
+      this.#schedulePoll();
     } catch (e) {
       this.#feedback.streaming.startFailed(String(e));
     }
   }
 
+  // --- Poll loop --------------------------------------------------------
+  #schedulePoll() {
+    this.#pollTimer = setTimeout(() => void this.#poll(), POLL_INTERVAL_MS);
+  }
+
+  /**
+   * One poll tick: fetch new job events since the cursor, fold them into UI
+   * state, then either end the job (terminal state) or schedule the next tick.
+   */
+  async #poll() {
+    const jobId = this.#jobId;
+    if (!jobId) return;
+    let status: JobStatus;
+    try {
+      status = await marlin.getJob(jobId, this.#since);
+    } catch (e) {
+      if (this.#jobId !== jobId) return; // job already ended elsewhere
+      this.#feedback.streaming.error(String(e));
+      this.#endJob();
+      return;
+    }
+    if (this.#jobId !== jobId) return; // ended while the request was in flight
+    this.#since = status.cursor;
+    this.#applyJobEvents(status);
+
+    if (isTerminalJobState(status.state)) {
+      this.#endJob();
+      return;
+    }
+    // Reflect remote pause/resume in the connection status display.
+    this.status = status.state === "paused" ? "paused" : "connected";
+    this.#schedulePoll();
+  }
+
+  /** Fold a status payload's new events into the log / progress / toasts. */
+  #applyJobEvents(status: JobStatus) {
+    for (const ev of status.events) {
+      switch (ev.type) {
+        case "progress": {
+          const sent = ev.sent ?? 0;
+          const total = ev.total ?? this.progress?.total ?? 0;
+          this.progress = { sent, total, currentCommand: ev.command ?? "" };
+          if (total > 0 && (sent % LOG_PROGRESS_EVERY_N_COMMANDS === 0 || sent === total)) {
+            this.#feedback.streaming.progressLog(sent, total, ev.command ?? "");
+          }
+          if (total > 0) {
+            const pct = Math.round((sent / total) * 100);
+            if (PROGRESS_MILESTONE_PERCENTAGES.includes(pct)) {
+              this.#feedback.streaming.progressMilestone(pct);
+            }
+          }
+          break;
+        }
+        case "action":
+          this.#addLog("info", ev.message ?? ev.action ?? "Action");
+          break;
+        case "complete":
+          this.#feedback.streaming.complete(
+            ev.sent ?? this.progress?.sent ?? 0,
+            ev.total ?? this.progress?.total ?? 0,
+          );
+          break;
+        case "error":
+          this.#feedback.streaming.error(ev.message ?? "Streaming error");
+          break;
+      }
+    }
+  }
+
+  // --- Stream controls --------------------------------------------------
   async pause() {
-    if (this.streamControlLoading) return;
+    if (this.streamControlLoading || !this.#jobId) return;
     this.streamControlLoading = true;
     try {
-      await marlin.pauseStream();
+      await marlin.pauseJob(this.#jobId);
       this.status = "paused";
       this.#feedback.streaming.paused();
     } catch (e) {
@@ -212,10 +333,10 @@ export class MachineSession {
   }
 
   async resume() {
-    if (this.streamControlLoading) return;
+    if (this.streamControlLoading || !this.#jobId) return;
     this.streamControlLoading = true;
     try {
-      await marlin.resumeStream();
+      await marlin.resumeJob(this.#jobId);
       this.status = "connected";
       this.#feedback.streaming.resumed();
     } catch (e) {
@@ -226,81 +347,51 @@ export class MachineSession {
   }
 
   async cancel() {
-    if (this.streamControlLoading) return;
+    if (this.streamControlLoading || !this.#jobId) return;
     this.streamControlLoading = true;
     try {
-      await marlin.cancelStream();
-      this.#resetAfterCancel();
+      await marlin.cancelJob(this.#jobId);
+      this.#endJob();
       this.#feedback.streaming.cancelled();
     } catch (e) {
       this.#feedback.streaming.cancelFailed(String(e));
-      this.#resetAfterCancel();
+      this.#endJob();
     } finally {
       this.streamControlLoading = false;
     }
   }
 
-  /** Emergency stop (M112) — disconnects the controller. Distinct from cancel. */
-  async stop() {
+  /** Emergency stop (M112) — halts the controller and drops the connection. */
+  async emergencyStop() {
     if (this.streamControlLoading) return;
     this.streamControlLoading = true;
     try {
-      await marlin.stopStream();
-      this.status = "disconnected";
-      // The job is over and the controller is gone — clear streaming flags so the
-      // UI can't keep offering Pause/Stop while disconnected (improves on React).
-      this.isStreaming = false;
-      this.progress = null;
+      await marlin.emergencyStop();
+      // M112 halts the board (recovery needs a reset). Close the sidecar
+      // connection too, so a later reconnect — which DTR-resets and recovers
+      // the board — isn't refused as "already connected". Best-effort.
+      try {
+        await marlin.disconnectMarlin();
+      } catch {
+        /* the connection may already be gone; ignore */
+      }
+      this.#endJob({ disconnected: true });
+      this.firmware = null;
+      this.capabilities = {};
       this.#feedback.streaming.stopped();
     } catch (e) {
       this.#feedback.streaming.stopFailed(String(e));
-      this.status = "disconnected";
-      this.isStreaming = false;
-      this.progress = null;
+      this.#endJob({ disconnected: true });
+      this.firmware = null;
+      this.capabilities = {};
     } finally {
       this.streamControlLoading = false;
     }
   }
 
-  // --- Tauri stream-event subscription ----------------------------------
-  /** Subscribe to stream lifecycle events; returns a cleanup that unlistens. */
-  async subscribe(): Promise<() => void> {
-    try {
-      const unlisten = await Promise.all([
-        marlin.onStreamStarted((s) => {
-          this.isStreaming = true;
-          this.#feedback.streaming.startedEvent(s.file, s.totalCommands);
-        }),
-        marlin.onStreamProgress((p) => {
-          // Drop stale progress from a finished/cancelled job (#219 stale-event
-          // guard — improves on React, which had no such guard).
-          if (!this.isStreaming) return;
-          this.progress = { sent: p.commandsSent, total: p.commandsTotal, currentCommand: p.command };
-          if (
-            p.commandsSent % LOG_PROGRESS_EVERY_N_COMMANDS === 0 ||
-            p.commandsSent === p.commandsTotal
-          ) {
-            this.#feedback.streaming.progressLog(p.commandsSent, p.commandsTotal, p.command);
-          }
-          const pct = Math.round((p.commandsSent / p.commandsTotal) * 100);
-          if (PROGRESS_MILESTONE_PERCENTAGES.includes(pct)) {
-            this.#feedback.streaming.progressMilestone(pct);
-          }
-        }),
-        marlin.onStreamComplete((c) => {
-          this.#resetAfterCancel();
-          this.#feedback.streaming.complete(c.commandsSent, c.commandsTotal);
-        }),
-        marlin.onStreamError((e) => {
-          this.#resetAfterCancel();
-          this.#feedback.streaming.error(e.message);
-        }),
-      ]);
-      return () => unlisten.forEach((u) => u());
-    } catch {
-      // No Tauri runtime (e.g. browser preview) — nothing to clean up.
-      return () => {};
-    }
+  /** Alias kept for the streaming "Stop" control. */
+  async stop() {
+    await this.emergencyStop();
   }
 }
 

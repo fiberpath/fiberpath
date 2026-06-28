@@ -20,6 +20,13 @@
           ? "Paused"
           : "Disconnected",
   );
+
+  // #146: surface the connected controller's reported capabilities (enabled only).
+  const enabledCapabilities = $derived(
+    Object.entries(m.capabilities)
+      .filter(([, on]) => on)
+      .map(([name]) => name),
+  );
 </script>
 
 <InspectorSection title="Connection">
@@ -54,6 +61,21 @@
     <span class="status__dot" aria-hidden="true"></span>
     <span>{statusText}</span>
   </div>
+
+  {#if m.isConnected && m.firmware}
+    <div class="info">
+      <div class="info__row">
+        <span class="info__label">Firmware</span>
+        <span class="info__value mono">{m.firmware}</span>
+      </div>
+      {#if enabledCapabilities.length > 0}
+        <div class="info__row">
+          <span class="info__label">Capabilities</span>
+          <span class="info__value">{enabledCapabilities.join(", ")}</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if m.status === "disconnected"}
     <button
@@ -113,5 +135,34 @@
   }
   .status[data-tone="paused"] .status__dot {
     background: var(--status-caution-fg);
+  }
+  .info {
+    margin: var(--spacing-sm) 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--color-bg-panel-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-xs);
+  }
+  .info__row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .info__row + .info__row {
+    margin-top: var(--spacing-xs);
+  }
+  .info__label {
+    color: var(--color-text-muted);
+  }
+  .info__value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text);
+  }
+  .info__value.mono {
+    font-family: var(--font-family-mono);
   }
 </style>
