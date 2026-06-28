@@ -36,7 +36,7 @@ hide:
 
     ---
 
-    **Latest Release:** [v0.8.0](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
+    **Latest Release:** [v0.9.0](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
 
     - **Desktop GUI** – Windows, macOS, Linux installers (no Python required)
     - **Python Package** – `pip install fiberpath`
@@ -44,15 +44,15 @@ hide:
 
     [:octicons-arrow-right-24: Installation Guide](getting-started.md)
 
--   :material-new-box:{ .lg .middle } **What's New in v0.8.0**
+-   :material-new-box:{ .lg .middle } **What's New in v0.9.0**
 
     ---
 
-    The desktop GUI was rewritten and the compute backend became a local service:
+    Marlin machine control was rebuilt on a dedicated, conformance-tested protocol library and moved onto the API sidecar:
 
-    - **GUI rewritten from React to Svelte 5** — a lighter, denser desktop UI reorganized into **Prepare** and **Machine** workspaces, with a native pan/zoom viewport. The production bundle shrank ~48%.
-    - **Bundled local-API sidecar** — the desktop app now spawns and supervises a frozen `fiberpath-api` server, and compute (export, preview, validate) goes through a typed client instead of shelling out to the CLI.
-    - **Body-only, stateless API** — `/plan`, `/validate`, and `/simulate` take their input in the request body (no filesystem paths); `/plan` returns G-code directly. Results share one versioned, camelCase wire schema.
+    - **`marlin-host` library** — the host side of the Marlin serial protocol (reliable line-numbered/checksummed framing, M115 capability negotiation, bounded waits, out-of-band M112 e-stop) now lives in a standalone, hardware-validated, PyPI-published library, replacing the old optimistic in-repo streamer.
+    - **Machine control over the local API** — the sidecar owns the serial port; the desktop GUI drives it through the typed client and polls a job resource for streaming progress, retiring the bespoke stdio subprocess protocol.
+    - **CLI on the same engine** — `fiberpath stream` now runs through `marlin-host` too.
 
     The Python package, planner, and `.wind` format are unchanged.
 

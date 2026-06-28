@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-28
+
 ### Added
 
 - Machine-control REST surface on the local API sidecar, backed by the
