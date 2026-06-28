@@ -2,9 +2,10 @@
 
 The plotter consumes a typed :class:`~fiberpath.planning.ir.Program` and reads
 geometry straight from its ``RAPID`` moves and metadata — it no longer parses
-G-code text or the ``; Parameters`` header. Segment tracking is deliberately
-G92-blind (``SET_POSITION`` is ignored) to preserve the pre-IR plot signature;
-S4 (#136) reviews the G92 reference-frame correction.
+G-code text or the ``; Parameters`` header. Segment tracking honors ``G92``:
+``SET_POSITION`` resets the reference frame (as in ``nominal_metrics``), so the
+unwrapped path measures from each reset instead of drawing a spurious backward
+sweep at the carriage-parked boundary.
 """
 
 from __future__ import annotations

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def _normalize(value: float) -> float | int:
-    """Mirror ``WindDefinition.dump_header``: integral floats render as ints."""
+    """Integral floats render as ints (e.g. 50, not 50.0) in the header JSON."""
     return int(value) if value.is_integer() else value
 
 
