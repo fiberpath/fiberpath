@@ -17,7 +17,7 @@ from typer.testing import CliRunner
 SIMPLE_CYLINDER_WIND = Path(__file__).parents[2] / "examples" / "simple_cylinder" / "input.wind"
 
 SIMPLE_CYLINDER_SIGNATURE_DIGEST = (
-    "f5516bc0b68cd25c8ab7014c05109c926f8183ad00ba1d25ee4b56835a73900f"
+    "1642dc1a96eba53330a5c21da544470a1956e71190a6ad533a1096c1c446e67c"
 )
 
 
@@ -34,7 +34,8 @@ def test_render_plot_produces_stable_geometry_signature() -> None:
     program = _plan_simple_cylinder_program()
     signature = compute_plot_signature(program)
     assert signature.digest == SIMPLE_CYLINDER_SIGNATURE_DIGEST
-    assert signature.segments_rendered == 1291
+    # G92-aware: the parked-end backward-sweep artifact (1291 blind) is gone (S4).
+    assert signature.segments_rendered == 1149
     assert signature.metadata.mandrel_length_mm == 500.0
     assert signature.metadata.tow_width_mm == 7.0
 

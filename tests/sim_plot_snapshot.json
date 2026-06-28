@@ -11,8 +11,8 @@
     "plot": {
       "mandrel_length_mm": 500.0,
       "tow_width_mm": 7.0,
-      "segments_rendered": 1291,
-      "digest": "f5516bc0b68cd25c8ab7014c05109c926f8183ad00ba1d25ee4b56835a73900f"
+      "segments_rendered": 1149,
+      "digest": "1642dc1a96eba53330a5c21da544470a1956e71190a6ad533a1096c1c446e67c"
     }
   },
   "examples/sized_simple_cylinder/expected.gcode": {
@@ -27,8 +27,8 @@
     "plot": {
       "mandrel_length_mm": 812.8,
       "tow_width_mm": 9.525,
-      "segments_rendered": 1973,
-      "digest": "6f40cee3265dfb3ec422295495cde31a98bd7b1d8896fb4400fa12fcf0554488"
+      "segments_rendered": 1803,
+      "digest": "e81cf6e70776b719c3dc817ee2cf5cafd9c51eb210ee6b2808feea3986024212"
     }
   },
   "examples/multi_layer/expected.gcode": {
@@ -43,8 +43,8 @@
     "plot": {
       "mandrel_length_mm": 940.0,
       "tow_width_mm": 7.0,
-      "segments_rendered": 36935,
-      "digest": "cebd9888e8b71cd0a9a6f1a1572c9ea0ee976751f4d8efb593485aff3b2831f0"
+      "segments_rendered": 36368,
+      "digest": "647648e18fbcff47d1adea6d13557a475c8b1e635d6148b46bf04e3b378b5ee0"
     }
   },
   "examples/rocketry/AvBay(470mm)single.gcode": {
@@ -59,8 +59,8 @@
     "plot": {
       "mandrel_length_mm": 630.0,
       "tow_width_mm": 5.7,
-      "segments_rendered": 76486,
-      "digest": "bb2c0a976a7a687cda6887599875f5f725e9774f9b1dded6f7528a4262fbea5b"
+      "segments_rendered": 76165,
+      "digest": "78d7d621925c85c4a16aeebd8a428b008dee0b11de8aaeae1a8cc8651c523965"
     }
   }
 }

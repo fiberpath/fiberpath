@@ -130,6 +130,13 @@ def _collect_segments(
     segments: list[list[tuple[float, float]]] = []
 
     for move in program.moves:
+        if move.kind is MoveKind.SET_POSITION:
+            # G92 redefines the coordinate origin (no motion) — honor it exactly as
+            # nominal_metrics does, so the unwrapped path measures from the reset
+            # frame instead of drawing a spurious backward sweep at the boundary.
+            x_pos = move.targets.get(Axis.CARRIAGE, x_pos)
+            y_pos = move.targets.get(Axis.MANDREL, y_pos)
+            continue
         if move.kind is not MoveKind.RAPID:
             continue
         next_x = move.targets.get(Axis.CARRIAGE, x_pos)
