@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 
-from fiberpath.config.schemas import HelicalLayer, MandrelParameters, TowParameters
+from fiberpath.config.schemas import HelicalLayer, HoopLayer, MandrelParameters, TowParameters
 from fiberpath.planning.calculations import compute_helical_kinematics
 from fiberpath.planning.helpers import Axis
 from fiberpath.planning.ir import Move, MoveKind
@@ -30,6 +30,19 @@ def helical_layer_moves(
     feed: float = 9000.0,
 ) -> list[Move]:
     """Plan a single helical layer in isolation and return its Motion IR moves."""
+    machine = WinderMachine(mandrel.diameter)
+    machine.set_feed_rate(feed)
+    dispatch_layer(machine, layer, mandrel, tow)
+    return machine.get_moves()
+
+
+def hoop_layer_moves(
+    layer: HoopLayer,
+    mandrel: MandrelParameters,
+    tow: TowParameters,
+    feed: float = 9000.0,
+) -> list[Move]:
+    """Plan a single hoop layer in isolation and return its Motion IR moves."""
     machine = WinderMachine(mandrel.diameter)
     machine.set_feed_rate(feed)
     dispatch_layer(machine, layer, mandrel, tow)
@@ -69,6 +82,28 @@ def assert_geometry(
         if abs(angle - alpha_deg) > tol:
             raise AssertionError(
                 f"laying segment at {angle:.9f} deg != alpha {alpha_deg} (dz={d_z}, arc={arc_mm})"
+            )
+
+
+def assert_hoop_geometry(
+    moves: Iterable[Move], mandrel_diameter: float, tow_width: float, tol: float = 1e-6
+) -> None:
+    """A hoop lays at the densest-wrap angle ``atan(circumference / tow_width)``.
+
+    This is the geometric wind angle of a hoop (close to, but not, 90 deg) -- set
+    by the tow width, not by the delivery-head lean -- so it is checked separately
+    from the helical ``alpha`` case.
+    """
+    circumference = math.pi * mandrel_diameter
+    expected = math.degrees(math.atan(circumference / tow_width))
+    segments = _surface_segments(moves, mandrel_diameter)
+    if not segments:
+        raise AssertionError("no laying (carriage-moving) segments found")
+    for d_z, arc_mm in segments:
+        angle = math.degrees(math.atan2(abs(arc_mm), abs(d_z)))
+        if abs(angle - expected) > tol:
+            raise AssertionError(
+                f"hoop segment at {angle:.9f} deg != densest-wrap {expected:.9f} deg"
             )
 
 

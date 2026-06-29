@@ -19,9 +19,10 @@ same :class:`Waypoint` s reusing :func:`lower_developed_path`.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
-from fiberpath.config.schemas import MandrelParameters
+from fiberpath.config.schemas import MandrelParameters, TowParameters
 
 from .calculations import HelicalKinematics
 from .helpers import Axis
@@ -62,9 +63,14 @@ class DevelopedPath:
     emit_initial_near_lock: bool
     initial_lock_degrees: float
     final_angle: float
+    # Helical re-zeros the mandrel datum after the initial near-lock move (G92);
+    # hoop does not (its mandrel angle stays absolute).
+    emit_initial_set_position: bool = True
+    # A terminal layer lays one direction and stops -- no closing zero_axes.
+    terminal: bool = False
 
 
-def build_developed_path(
+def build_helical_developed_path(
     spec: PatternSpec,
     kinematics: HelicalKinematics,
     mandrel: MandrelParameters,
@@ -187,6 +193,90 @@ def build_developed_path(
         emit_initial_near_lock=not spec.skip_initial_near_lock,
         initial_lock_degrees=lock_degrees,
         final_angle=mandrel_position,
+        emit_initial_set_position=True,
+        terminal=False,
+    )
+
+
+def build_hoop_developed_path(
+    spec: PatternSpec,
+    mandrel: MandrelParameters,
+    tow: TowParameters,
+) -> DevelopedPath:
+    """Build the developed-surface path for a hoop layer (the ``alpha -> 90`` case).
+
+    Hoop is not a ``tan(alpha)`` helix: its axial pitch is the tow width, so the
+    mandrel turns ``wind_length / tow_width`` times per pass and the delivery head
+    leans by ``90 - atan(D / tow_width)`` to lay the tow flat. Mirrors the legacy
+    ``plan_hoop_layer`` emission (no initial G92; terminal layers omit the return
+    pass and the closing zero_axes).
+    """
+    lock_degrees = spec.lock_degrees
+    delivery_head_lean = 90.0 - math.degrees(math.atan(mandrel.diameter / tow.width))
+    mandrel_rotations = mandrel.wind_length / tow.width
+    far_mandrel = lock_degrees + mandrel_rotations * 360.0
+    far_lock = far_mandrel + lock_degrees
+    near_mandrel = far_lock + mandrel_rotations * 360.0
+    near_lock = near_mandrel + lock_degrees
+    wind_length = mandrel.wind_length
+
+    # Far pass: lean the head, lay forward to the far end, lock.
+    waypoints: list[Waypoint] = [
+        Waypoint(
+            z=0.0,
+            theta=lock_degrees,
+            lean=-delivery_head_lean,
+            lay=False,
+            emit=frozenset({Axis.DELIVERY_HEAD}),
+        ),
+        Waypoint(
+            z=wind_length,
+            theta=far_mandrel,
+            lean=-delivery_head_lean,
+            lay=True,
+            emit=frozenset({Axis.CARRIAGE, Axis.MANDREL}),
+        ),
+        Waypoint(
+            z=wind_length,
+            theta=far_lock,
+            lean=0.0,
+            lay=False,
+            emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+        ),
+    ]
+    if not spec.terminal:
+        # Near pass: lean the other way, lay back to the near end, lock.
+        waypoints += [
+            Waypoint(
+                z=wind_length,
+                theta=far_lock,
+                lean=delivery_head_lean,
+                lay=False,
+                emit=frozenset({Axis.DELIVERY_HEAD}),
+            ),
+            Waypoint(
+                z=0.0,
+                theta=near_mandrel,
+                lean=delivery_head_lean,
+                lay=True,
+                emit=frozenset({Axis.CARRIAGE, Axis.MANDREL}),
+            ),
+            Waypoint(
+                z=0.0,
+                theta=near_lock,
+                lean=0.0,
+                lay=False,
+                emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+            ),
+        ]
+
+    return DevelopedPath(
+        waypoints=tuple(waypoints),
+        emit_initial_near_lock=True,
+        initial_lock_degrees=lock_degrees,
+        final_angle=near_lock,
+        emit_initial_set_position=False,
+        terminal=spec.terminal,
     )
 
 
@@ -209,11 +299,13 @@ def lower_developed_path(machine: WinderMachine, path: DevelopedPath) -> None:
         machine.move(
             {Axis.CARRIAGE: 0.0, Axis.MANDREL: path.initial_lock_degrees, Axis.DELIVERY_HEAD: 0.0}
         )
-        machine.set_position({Axis.MANDREL: 0.0})
+        if path.emit_initial_set_position:
+            machine.set_position({Axis.MANDREL: 0.0})
 
     for waypoint in path.waypoints:
         if waypoint.comment is not None:
             machine.insert_comment(waypoint.comment)
         machine.move(_targets(waypoint))
 
-    machine.zero_axes(path.final_angle)
+    if not path.terminal:
+        machine.zero_axes(path.final_angle)

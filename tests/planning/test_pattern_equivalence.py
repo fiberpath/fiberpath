@@ -16,16 +16,24 @@ import pytest
 from _equivalence import (
     assert_coverage,
     assert_geometry,
+    assert_hoop_geometry,
     assert_lean,
     assert_metrics_equal,
     helical_layer_moves,
+    hoop_layer_moves,
 )
 from fiberpath.config import load_wind_definition
-from fiberpath.config.schemas import HelicalLayer
+from fiberpath.config.schemas import HelicalLayer, HoopLayer
 from fiberpath.gcode.reader import read_program
 from fiberpath.planning import plan_wind
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Pure-hoop example parts (developed-surface hoop lowering, S3).
+HOOP_GOLDENS: list[tuple[str, str]] = [
+    ("examples/simple_cylinder/input.wind", "examples/simple_cylinder/expected.gcode"),
+    ("examples/sized_simple_cylinder/input.wind", "examples/sized_simple_cylinder/expected.gcode"),
+]
 
 # Example parts that contain helical layers (the ones whose bytes the developed
 # lowering owns); the two pure-hoop parts stay on the byte-equal gate.
@@ -56,7 +64,20 @@ def test_helical_layers_satisfy_path_invariants(wind_rel: str) -> None:
         assert_lean(moves, layer.wind_angle)
 
 
-@pytest.mark.parametrize("wind_rel,golden_rel", HELICAL_GOLDENS)
+@pytest.mark.parametrize("wind_rel", [w for w, _ in HOOP_GOLDENS])
+def test_hoop_layers_lay_at_densest_wrap_angle(wind_rel: str) -> None:
+    definition = load_wind_definition(REPO_ROOT / wind_rel)
+    mandrel = definition.mandrel_parameters
+    tow = definition.tow_parameters
+
+    hoops = [layer for layer in definition.layers if isinstance(layer, HoopLayer)]
+    assert hoops, f"{wind_rel} has no hoop layer"
+    for layer in hoops:
+        moves = hoop_layer_moves(layer, mandrel, tow, definition.default_feed_rate)
+        assert_hoop_geometry(moves, mandrel.diameter, tow.width)
+
+
+@pytest.mark.parametrize("wind_rel,golden_rel", HELICAL_GOLDENS + HOOP_GOLDENS)
 def test_new_lowering_matches_golden_metrics(wind_rel: str, golden_rel: str) -> None:
     definition = load_wind_definition(REPO_ROOT / wind_rel)
     old = read_program((REPO_ROOT / golden_rel).read_text(encoding="utf-8").splitlines())
@@ -121,3 +142,13 @@ def test_metrics_check_rejects_dropped_moves() -> None:
     moves, mandrel, _ = _fixture_moves()
     with pytest.raises(AssertionError):
         assert_metrics_equal(moves, moves[: len(moves) // 2], mandrel.diameter)
+
+
+def test_hoop_geometry_check_rejects_wrong_tow_width() -> None:
+    from fiberpath.config.schemas import MandrelParameters, TowParameters
+
+    mandrel = MandrelParameters.model_validate({"diameter": 50.0, "windLength": 120.0})
+    tow = TowParameters.model_validate({"width": 6.0, "thickness": 0.5})
+    moves = hoop_layer_moves(HoopLayer(terminal=False), mandrel, tow)
+    with pytest.raises(AssertionError):
+        assert_hoop_geometry(moves, mandrel.diameter, tow.width * 2.0)
