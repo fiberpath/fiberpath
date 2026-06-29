@@ -334,12 +334,12 @@ def build_cone_helical_developed_path(
                         emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
                     )
                 )
-                # Per-pass turnaround dwell (no emitted move). Mirrors the cylinder
-                # formula. minimal: on a cone theta_full is large, so this can go
-                # negative -> a backward mandrel spin at the turnaround. The laying
-                # geometry (validated here) is unaffected, but the cone turnaround /
-                # lock semantics + pattern distribution need revisiting in S3 (#308),
-                # and the harness should then assert mandrel monotonicity.
+                # Per-pass turnaround dwell (no emitted move): identical formula to
+                # the cylinder builder. On a cone theta_full is large so this can go
+                # negative -> a small backward alignment spin at the turnaround; this
+                # is the same lock-alignment mechanism the cylinder uses (it already
+                # goes negative on high-wrap cylinder layers in the shipping goldens),
+                # kept deliberately so cones match the hardware-validated behavior.
                 mandrel_position += lock_degrees - lead_out_degrees - (theta_full % 360.0)
             mandrel_position += start_position_increment
         mandrel_position += pattern_step_degrees

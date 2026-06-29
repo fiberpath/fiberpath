@@ -11,7 +11,12 @@ from fiberpath.config.schemas import (
     TowParameters,
 )
 from fiberpath.planning.exceptions import LayerValidationError
-from fiberpath.planning.validators import validate_helical_layer, validate_layer
+from fiberpath.planning.surface import Cone
+from fiberpath.planning.validators import (
+    validate_cone_helical_layer,
+    validate_helical_layer,
+    validate_layer,
+)
 
 MANDREL = MandrelParameters.model_validate({"diameter": 70.0, "windLength": 100.0})
 BASE_LAYER = {
@@ -143,3 +148,50 @@ def test_validate_layer_passes_through_hoop_and_skip_with_no_kinematics() -> Non
         validate_layer(1, SkipLayer.model_validate({"mandrelRotation": 45.0}), MANDREL, _TOW)
         is None
     )
+
+
+# ---------------------------------------------------------------------------
+# cone helical validation
+# ---------------------------------------------------------------------------
+
+# windAngle=30 on this frustum gives num_circuits=45 (divisible by patternNumber=3).
+_CONE = Cone(r0=49.0, r1=27.0, length=120.0)
+_CONE_LAYER = HelicalLayer.model_validate(
+    {
+        "windAngle": 30.0,
+        "patternNumber": 3,
+        "skipIndex": 1,
+        "lockDegrees": 180.0,
+        "leadInMM": 5.0,
+        "leadOutDegrees": 15.0,
+    }
+)
+
+
+def test_validate_cone_helical_layer_returns_kinematics() -> None:
+    result = validate_cone_helical_layer(1, _CONE_LAYER, _CONE, _TOW)
+    assert result.num_circuits == 45
+    assert result.num_circuits % _CONE_LAYER.pattern_number == 0
+
+
+def test_validate_cone_rejects_expanding_frustum() -> None:
+    with pytest.raises(LayerValidationError, match="reducing frustum"):
+        validate_cone_helical_layer(1, _CONE_LAYER, Cone(r0=27.0, r1=49.0, length=120.0), _TOW)
+
+
+def test_validate_cone_rejects_unreachable_angle() -> None:
+    # asin(27/49) ~= 33.4 deg is the steepest reachable angle on this frustum.
+    steep = HelicalLayer.model_validate(
+        {**_CONE_LAYER.model_dump(by_alias=True), "windAngle": 40.0}
+    )
+    with pytest.raises(LayerValidationError, match="too steep"):
+        validate_cone_helical_layer(1, steep, _CONE, _TOW)
+
+
+def test_validate_cone_rejects_non_divisible_circuit_pattern() -> None:
+    # num_circuits=45; patternNumber=2 must fail because 45 % 2 != 0 (skip 1 is coprime).
+    layer = HelicalLayer.model_validate(
+        {**_CONE_LAYER.model_dump(by_alias=True), "patternNumber": 2, "skipIndex": 1}
+    )
+    with pytest.raises(LayerValidationError, match="not divisible by patternNumber"):
+        validate_cone_helical_layer(1, layer, _CONE, _TOW)

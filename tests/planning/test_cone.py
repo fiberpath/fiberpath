@@ -10,6 +10,7 @@ import math
 
 import pytest
 from _equivalence import (
+    assert_cone_circuit_count,
     assert_cone_coverage,
     assert_cone_geometry,
     cone_helical_layer_moves,
@@ -101,8 +102,14 @@ def test_lowered_path_is_a_geodesic_clairaut_invariant() -> None:
     assert_cone_geometry(moves, kin)
 
 
+def test_lowered_path_lays_all_circuits() -> None:
+    kin = _kin()
+    moves = cone_helical_layer_moves(helical_spec(LAYER), kin, MANDREL)
+    assert_cone_circuit_count(moves, kin.num_circuits)
+
+
 def test_cone_coverage_tiles_large_end() -> None:
-    assert_cone_coverage(_kin(), TOW)
+    assert_cone_coverage(LAYER, _kin(), TOW)
 
 
 def test_near_degenerate_cone_approaches_cylinder_rotation() -> None:

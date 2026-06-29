@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import gcd
+from math import asin, degrees, gcd, radians, sin
 
 from fiberpath.config.schemas import (
     HelicalLayer,
@@ -11,9 +11,15 @@ from fiberpath.config.schemas import (
     TowParameters,
 )
 
-from .calculations import HelicalKinematics, compute_helical_kinematics
+from .calculations import (
+    ConeHelicalKinematics,
+    HelicalKinematics,
+    compute_cone_helical_kinematics,
+    compute_helical_kinematics,
+)
 from .exceptions import LayerValidationError
-from .pattern import pattern_spec
+from .pattern import PatternSpec, pattern_spec
+from .surface import Cone
 
 MIN_WIND_ANGLE = 1.0
 MAX_WIND_ANGLE = 89.0
@@ -80,18 +86,19 @@ def validate_layer(
     return None
 
 
-def validate_helical_layer(
+def _validate_coverage(
     layer_index: int,
-    layer: HelicalLayer,
-    mandrel: MandrelParameters,
-    tow: TowParameters,
-) -> HelicalKinematics:
-    # Read the coverage pattern from the declarative primitive (PatternSpec), so
-    # this is a type-checker over the primitive rather than the raw schema. This
-    # is equivalent to the raw layer only while helical_spec is a verbatim
-    # projection of the coverage fields (it is); the kinematics below are still
-    # derived from the layer, which is the single motion-math source.
-    spec = pattern_spec(layer)
+    spec: PatternSpec,
+    num_circuits: int,
+    wind_length: float,
+) -> None:
+    """Coverage checks shared by cylinder and cone helical layers.
+
+    These are pattern-stepping conditions in mandrel degrees (skip/pattern
+    coprimality, lead-in bound, circuit divisibility, the lockDegrees slot math)
+    and are surface-independent: a cone steps its circuit starts at the large-end
+    datum with the same arithmetic, so the same conditions guarantee coverage.
+    """
     if spec.skip_index >= spec.pattern_number:
         raise LayerValidationError(
             layer_index,
@@ -104,23 +111,22 @@ def validate_helical_layer(
             "skipIndex and patternNumber must be coprime for full coverage",
         )
 
-    if spec.lead_in_mm >= mandrel.wind_length:
+    if spec.lead_in_mm >= wind_length:
         raise LayerValidationError(
             layer_index,
             (
                 f"leadInMM ({spec.lead_in_mm}mm) must be less than the mandrel "
-                f"windLength ({mandrel.wind_length}mm); a longer lead-in drives the "
+                f"windLength ({wind_length}mm); a longer lead-in drives the "
                 "carriage off the mandrel into negative coordinates"
             ),
         )
 
-    kinematics = compute_helical_kinematics(layer, mandrel, tow)
-    if kinematics.num_circuits % spec.pattern_number != 0:
+    if num_circuits % spec.pattern_number != 0:
         raise LayerValidationError(
             layer_index,
             (
                 "computed circuit count is not divisible by patternNumber "
-                f"({kinematics.num_circuits} % {spec.pattern_number} != 0)"
+                f"({num_circuits} % {spec.pattern_number} != 0)"
             ),
         )
 
@@ -183,4 +189,62 @@ def validate_helical_layer(
                 ),
             )
 
+
+def validate_helical_layer(
+    layer_index: int,
+    layer: HelicalLayer,
+    mandrel: MandrelParameters,
+    tow: TowParameters,
+) -> HelicalKinematics:
+    # Read the coverage pattern from the declarative primitive (PatternSpec), so
+    # this is a type-checker over the primitive rather than the raw schema. This
+    # is equivalent to the raw layer only while helical_spec is a verbatim
+    # projection of the coverage fields (it is); the kinematics below are still
+    # derived from the layer, which is the single motion-math source.
+    spec = pattern_spec(layer)
+    kinematics = compute_helical_kinematics(layer, mandrel, tow)
+    _validate_coverage(layer_index, spec, kinematics.num_circuits, mandrel.wind_length)
+    return kinematics
+
+
+def validate_cone_helical_layer(
+    layer_index: int,
+    layer: HelicalLayer,
+    surface: Cone,
+    tow: TowParameters,
+) -> ConeHelicalKinematics:
+    """Validate a helical layer wound on a cone, as a type-check over the primitive.
+
+    Cone-specific guards (orientation, geodesic reachability) raised as
+    ``LayerValidationError`` for a consistent planner-facing error, then the
+    shared coverage conditions over the large-end circuit count. Not yet wired
+    into the planner (S3b) -- cones reach this only via direct construction.
+    """
+    validate_layer_numeric_bounds(layer_index, layer)
+
+    if surface.r1 >= surface.r0:
+        raise LayerValidationError(
+            layer_index,
+            (
+                f"cone requires a reducing frustum with r0 > r1 (got r0={surface.r0}, "
+                f"r1={surface.r1}); the wind angle anchors at the large end r0, so mount "
+                "the large end at z=0"
+            ),
+        )
+
+    clairaut_const = surface.r0 * sin(radians(layer.wind_angle))
+    if clairaut_const > surface.r1:
+        max_angle = degrees(asin(surface.r1 / surface.r0))
+        raise LayerValidationError(
+            layer_index,
+            (
+                f"wind angle {layer.wind_angle}° is too steep for the cone: the geodesic "
+                f"(Clairaut C={clairaut_const:.4g}mm) cannot reach the small-end radius "
+                f"{surface.r1:.4g}mm. Reduce the wind angle to <= {max_angle:.4g}°"
+            ),
+        )
+
+    spec = pattern_spec(layer)
+    kinematics = compute_cone_helical_kinematics(layer, surface, tow)
+    _validate_coverage(layer_index, spec, kinematics.num_circuits, surface.length)
     return kinematics

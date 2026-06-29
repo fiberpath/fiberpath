@@ -218,12 +218,50 @@ def assert_cone_geometry(
         )
 
 
-def assert_cone_coverage(kinematics: ConeHelicalKinematics, tow: TowParameters) -> None:
-    """Coverage anchored at the large end tiles the largest parallel without gaps."""
+def assert_cone_coverage(
+    layer: HelicalLayer, kinematics: ConeHelicalKinematics, tow: TowParameters
+) -> None:
+    """Coverage anchored at the large end tiles AND distributes without aliasing.
+
+    Beyond tiling the largest parallel, the circuit starts must distribute evenly:
+    skip/pattern coprimality and circuit-count divisibility (the same conditions
+    the validators enforce) -- pattern stepping is surface-independent mandrel math.
+    """
+    if math.gcd(layer.skip_index, layer.pattern_number) != 1:
+        raise AssertionError(
+            f"skip_index {layer.skip_index} / pattern_number {layer.pattern_number} not coprime"
+            " — circuits alias, leaving coverage gaps"
+        )
+    if kinematics.num_circuits % layer.pattern_number != 0:
+        raise AssertionError(
+            f"num_circuits {kinematics.num_circuits} not divisible by pattern_number"
+            f" {layer.pattern_number} — pattern under-tiles"
+        )
     tow_arc_length = tow.width / math.cos(math.radians(kinematics.alpha_ref_deg))
     circumference0 = 2.0 * math.pi * kinematics.r0
     if kinematics.num_circuits * tow_arc_length + 1e-9 < circumference0:
         raise AssertionError("coverage gap at the large end: circuits * tow_arc < circumference")
+
+
+def assert_cone_circuit_count(moves: Iterable[Move], expected_circuits: int) -> None:
+    """The lowered program actually lays ``2 * expected_circuits`` passes.
+
+    Independent of the validator: counts direction-reversed runs of carriage-moving
+    segments in the emitted IR, so it catches a builder that silently under-tiles
+    (e.g. truncating ``int(num_circuits / pattern_number)``) rather than only
+    restating the planned circuit count.
+    """
+    passes = 0
+    prev_sign = 0
+    for _z_mid, d_z, _d_theta in _cone_laying_segments(moves):
+        sign = 1 if d_z > 0 else -1
+        if sign != prev_sign:
+            passes += 1
+            prev_sign = sign
+    if passes != 2 * expected_circuits:
+        raise AssertionError(
+            f"emitted {passes} laying passes != 2 * num_circuits ({2 * expected_circuits})"
+        )
 
 
 def assert_metrics_equal(
