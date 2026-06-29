@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from fiberpath.config.schemas import (
     HelicalLayer,
     HoopLayer,
@@ -12,10 +10,13 @@ from fiberpath.config.schemas import (
     SkipLayer,
     TowParameters,
 )
-from fiberpath.math_utils import rad_to_deg
 
 from .calculations import HelicalKinematics, compute_helical_kinematics
-from .developed import build_developed_path, lower_developed_path
+from .developed import (
+    build_helical_developed_path,
+    build_hoop_developed_path,
+    lower_developed_path,
+)
 from .helpers import Axis
 from .machine import WinderMachine
 from .pattern import pattern_spec
@@ -57,31 +58,10 @@ def plan_hoop_layer(
     mandrel_parameters: MandrelParameters,
     tow_parameters: TowParameters,
 ) -> None:
-    lock_degrees = 180.0
-    # The hoop wind angle is ~90 deg by definition; this is the *delivery-head
-    # lean* that lays the tow flat at that wrap, derived from the tow geometry.
-    # It is not a fiber/wind angle -- see PatternSpec.alpha_deg in planning.pattern.
-    delivery_head_lean = 90.0 - rad_to_deg(
-        math.atan(mandrel_parameters.diameter / tow_parameters.width)
-    )
-    mandrel_rotations = mandrel_parameters.wind_length / tow_parameters.width
-    far_mandrel = lock_degrees + mandrel_rotations * 360.0
-    far_lock = far_mandrel + lock_degrees
-    near_mandrel = far_lock + mandrel_rotations * 360.0
-    near_lock = near_mandrel + lock_degrees
-
-    machine.move({Axis.CARRIAGE: 0.0, Axis.MANDREL: lock_degrees, Axis.DELIVERY_HEAD: 0.0})
-    machine.move({Axis.DELIVERY_HEAD: -delivery_head_lean})
-    machine.move({Axis.CARRIAGE: mandrel_parameters.wind_length, Axis.MANDREL: far_mandrel})
-    machine.move({Axis.MANDREL: far_lock, Axis.DELIVERY_HEAD: 0.0})
-
-    if layer.terminal:
-        return
-
-    machine.move({Axis.DELIVERY_HEAD: delivery_head_lean})
-    machine.move({Axis.CARRIAGE: 0.0, Axis.MANDREL: near_mandrel})
-    machine.move({Axis.MANDREL: near_lock, Axis.DELIVERY_HEAD: 0.0})
-    machine.zero_axes(near_lock)
+    # Cut over to the developed-surface primitive (S3 #297): hoop is the alpha->90
+    # case feeding the same lowering as helical. Byte-identical to the prior emitter.
+    path = build_hoop_developed_path(pattern_spec(layer), mandrel_parameters, tow_parameters)
+    lower_developed_path(machine, path)
 
 
 def plan_helical_layer(
@@ -98,7 +78,7 @@ def plan_helical_layer(
     kinematics = helical_kinematics or compute_helical_kinematics(
         layer, mandrel_parameters, tow_parameters
     )
-    path = build_developed_path(pattern_spec(layer), kinematics, mandrel_parameters)
+    path = build_helical_developed_path(pattern_spec(layer), kinematics, mandrel_parameters)
     lower_developed_path(machine, path)
 
 
