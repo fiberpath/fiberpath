@@ -7,9 +7,10 @@ a :class:`~fiberpath.planning.pattern.PatternSpec` into a
 developed surface -- and lowers that path to Motion IR through
 :class:`~fiberpath.planning.machine.WinderMachine`.
 
-Stage 2 / S2 (#296), helical only. The lowering deliberately *mirrors* the
-legacy ``plan_helical_layer`` emission (same move order, comments, framing, and
-the exact additive ``theta`` accumulation) so the developed-surface path is the
+Introduced in Stage 2 for helical (#296) and extended to hoop/skip (#297, #298).
+The lowering deliberately *mirrors* the prior imperative emitters (same move
+order, comments, framing, and the exact additive ``theta`` accumulation) so the
+developed-surface path is the
 single geometry source while the emitted bytes stay identical to the committed
 goldens until they are regenerated. The clean structural collapse (one move per
 vertex) is deferred to a later slice behind the now-validated equivalence
@@ -61,6 +62,8 @@ class DevelopedPath:
 
     waypoints: tuple[Waypoint, ...]
     emit_initial_near_lock: bool
+    # Mandrel target of the initial near-lock move: a lock angle for laying
+    # layers, the reposition angle for a (non-laying) skip.
     initial_lock_degrees: float
     final_angle: float
     # Helical re-zeros the mandrel datum after the initial near-lock move (G92);
@@ -207,9 +210,9 @@ def build_hoop_developed_path(
 
     Hoop is not a ``tan(alpha)`` helix: its axial pitch is the tow width, so the
     mandrel turns ``wind_length / tow_width`` times per pass and the delivery head
-    leans by ``90 - atan(D / tow_width)`` to lay the tow flat. Mirrors the legacy
-    ``plan_hoop_layer`` emission (no initial G92; terminal layers omit the return
-    pass and the closing zero_axes).
+    leans by ``90 - atan(D / tow_width)`` to lay the tow flat. Mirrors the prior
+    hoop emitter (no initial G92; terminal layers omit the return pass and the
+    closing zero_axes).
     """
     lock_degrees = spec.lock_degrees
     delivery_head_lean = 90.0 - math.degrees(math.atan(mandrel.diameter / tow.width))
@@ -277,6 +280,24 @@ def build_hoop_developed_path(
         final_angle=near_lock,
         emit_initial_set_position=False,
         terminal=spec.terminal,
+    )
+
+
+def build_skip_developed_path(spec: PatternSpec) -> DevelopedPath:
+    """Build the developed-surface path for a skip layer (a non-laying reposition).
+
+    A skip lays no fiber: it rotates the mandrel by ``reposition_degrees`` and
+    re-zeros the datum, with no laying waypoints and no closing zero_axes. It
+    reuses the prologue framing -- the initial move carries the reposition angle
+    (not a lock) and the G92 resets the datum.
+    """
+    return DevelopedPath(
+        waypoints=(),
+        emit_initial_near_lock=True,
+        initial_lock_degrees=spec.reposition_degrees,
+        final_angle=0.0,
+        emit_initial_set_position=True,
+        terminal=True,
     )
 
 

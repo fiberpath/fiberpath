@@ -13,11 +13,7 @@ from fiberpath.config.schemas import (
     WindDefinition,
 )
 from fiberpath.planning import plan_wind
-from fiberpath.planning.layer_strategies import (
-    plan_helical_layer,
-    plan_hoop_layer,
-    plan_skip_layer,
-)
+from fiberpath.planning.layer_strategies import dispatch_layer
 from fiberpath.planning.machine import WinderMachine
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -39,11 +35,12 @@ def update_layer_fixtures() -> None:
     tow = TowParameters.model_validate({"width": 6.0, "thickness": 0.5})
 
     hoop_machine = machine()
-    plan_hoop_layer(hoop_machine, HoopLayer(terminal=False), mandrel, tow)
+    dispatch_layer(hoop_machine, HoopLayer(terminal=False), mandrel, tow)
     write("hoop_layer.gcode", hoop_machine.get_gcode())
 
+    helical_mandrel = MandrelParameters.model_validate({"diameter": 40.0, "windLength": 120.0})
     helical_machine = machine(40.0)
-    plan_helical_layer(
+    dispatch_layer(
         helical_machine,
         HelicalLayer.model_validate(
             {
@@ -55,15 +52,17 @@ def update_layer_fixtures() -> None:
                 "leadOutDegrees": 12.0,
             }
         ),
-        MandrelParameters.model_validate({"diameter": 40.0, "windLength": 120.0}),
+        helical_mandrel,
         tow,
     )
     write("helical_layer.gcode", helical_machine.get_gcode())
 
     skip_machine = machine()
-    plan_skip_layer(
+    dispatch_layer(
         skip_machine,
         SkipLayer.model_validate({"mandrelRotation": 45.0}),
+        mandrel,
+        tow,
     )
     write("skip_layer.gcode", skip_machine.get_gcode())
 

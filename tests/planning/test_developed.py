@@ -5,11 +5,18 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from fiberpath.config.schemas import HelicalLayer, HoopLayer, MandrelParameters, TowParameters
+from fiberpath.config.schemas import (
+    HelicalLayer,
+    HoopLayer,
+    MandrelParameters,
+    SkipLayer,
+    TowParameters,
+)
 from fiberpath.planning.calculations import compute_helical_kinematics
 from fiberpath.planning.developed import (
     build_helical_developed_path,
     build_hoop_developed_path,
+    build_skip_developed_path,
     lower_developed_path,
 )
 from fiberpath.planning.machine import WinderMachine
@@ -72,26 +79,28 @@ def test_developed_waypoints_lie_at_the_wind_angle() -> None:
     assert checked > 0  # the path actually has laying (carriage-moving) segments
 
 
-def test_high_angle_negative_tail_term_stays_byte_identical() -> None:
+def test_high_angle_helical_waypoints_lie_at_the_wind_angle() -> None:
     # alpha=80 makes pass_rotation_degrees % 360 > 180, so the per-pass tail term
-    # goes negative; exercises that the accumulation order is preserved.
+    # goes negative; confirm the high-angle path still lays at the wind angle.
     layer = HelicalLayer.model_validate(
         {**FIXTURE_LAYER, "windAngle": 80.0, "patternNumber": 1, "skipIndex": 1}
     )
-    machine_new = WinderMachine(MANDREL.diameter)
-    machine_new.set_feed_rate(9000.0)
     kinematics = compute_helical_kinematics(layer, MANDREL, TOW)
-    lower_developed_path(
-        machine_new, build_helical_developed_path(pattern_spec(layer), kinematics, MANDREL)
-    )
+    path = build_helical_developed_path(pattern_spec(layer), kinematics, MANDREL)
 
-    from fiberpath.planning.layer_strategies import plan_helical_layer
-
-    machine_old = WinderMachine(MANDREL.diameter)
-    machine_old.set_feed_rate(9000.0)
-    plan_helical_layer(machine_old, layer, MANDREL, TOW)
-
-    assert machine_new.get_gcode() == machine_old.get_gcode()
+    circumference = math.pi * MANDREL.diameter
+    prev = None
+    checked = 0
+    for waypoint in path.waypoints:
+        if prev is not None:
+            d_z = waypoint.z - prev.z
+            if abs(d_z) > 1e-9:
+                arc_mm = (waypoint.theta - prev.theta) / 360.0 * circumference
+                angle = math.degrees(math.atan2(abs(arc_mm), abs(d_z)))
+                assert abs(angle - layer.wind_angle) < 1e-9
+                checked += 1
+        prev = waypoint
+    assert checked > 0
 
 
 def _lower_hoop(terminal: bool) -> list[str]:
@@ -116,6 +125,24 @@ def test_terminal_hoop_omits_the_return_pass_and_zero_axes() -> None:
     assert terminal == non_terminal[: len(terminal)]
     assert len(terminal) < len(non_terminal)
     assert not any(line.startswith("G92") for line in terminal)
+
+
+def test_skip_lowering_is_byte_identical_to_committed_fixture() -> None:
+    machine = WinderMachine(HOOP_MANDREL.diameter)
+    machine.set_feed_rate(9000.0)
+    spec = pattern_spec(SkipLayer.model_validate({"mandrelRotation": 45.0}))
+    lower_developed_path(machine, build_skip_developed_path(spec))
+    fixture = (Path(__file__).parent / "fixtures" / "skip_layer.gcode").read_text().splitlines()
+    assert machine.get_gcode() == fixture
+
+
+def test_skip_lays_no_fiber_and_only_repositions() -> None:
+    spec = pattern_spec(SkipLayer.model_validate({"mandrelRotation": 45.0}))
+    path = build_skip_developed_path(spec)
+    # A skip is a pure reposition: no laying waypoints, no closing zero_axes.
+    assert path.waypoints == ()
+    assert path.terminal is True
+    assert path.initial_lock_degrees == 45.0
 
 
 def test_hoop_waypoints_lie_at_the_densest_wrap_angle() -> None:
