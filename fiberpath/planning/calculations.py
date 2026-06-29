@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from fiberpath.config.schemas import HelicalLayer, MandrelParameters, TowParameters
 from fiberpath.math_utils import deg_to_rad
 
+from .surface import Cylinder
+
 
 @dataclass(slots=True)
 class HelicalKinematics:
@@ -27,7 +29,8 @@ def compute_helical_kinematics(
     mandrel_parameters: MandrelParameters,
     tow_parameters: TowParameters,
 ) -> HelicalKinematics:
-    mandrel_circumference = math.pi * mandrel_parameters.diameter
+    surface = Cylinder(radius=mandrel_parameters.diameter / 2.0)
+    mandrel_circumference = surface.circumference_at(0.0)
     tow_arc_length = tow_parameters.width / math.cos(deg_to_rad(layer.wind_angle))
     num_circuits = math.ceil(mandrel_circumference / tow_arc_length)
     pattern_step_degrees = 360.0 * (1 / num_circuits)

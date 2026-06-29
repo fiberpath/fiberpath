@@ -29,6 +29,7 @@ from .calculations import HelicalKinematics
 from .helpers import Axis
 from .machine import WinderMachine
 from .pattern import PatternSpec
+from .surface import Cylinder
 
 #: Delivery-head lift applied at each pass start/end before/after the laying lean.
 PASS_START_LEAN_DEG = -10.0
@@ -215,7 +216,8 @@ def build_hoop_developed_path(
     closing zero_axes).
     """
     lock_degrees = spec.lock_degrees
-    delivery_head_lean = 90.0 - math.degrees(math.atan(mandrel.diameter / tow.width))
+    surface = Cylinder(radius=mandrel.diameter / 2.0)
+    delivery_head_lean = 90.0 - math.degrees(math.atan(surface.diameter_at(0.0) / tow.width))
     mandrel_rotations = mandrel.wind_length / tow.width
     far_mandrel = lock_degrees + mandrel_rotations * 360.0
     far_lock = far_mandrel + lock_degrees
