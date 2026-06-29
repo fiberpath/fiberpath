@@ -145,7 +145,7 @@ A helical layer winds at a specified angle, creating a spiral pattern around the
 
 **Parameter Meaning (Quick Guide)**:
 
-- **`windAngle`**: Fiber direction relative to mandrel axis (`0°` axial, `90°` hoop)
+- **`windAngle`**: Fiber direction relative to mandrel axis. This is the **normative** wind-angle convention across FiberPath — measured from the mandrel axis (the meridian), with `0°` axial and `90°` hoop. A hoop layer is the `windAngle → 90°` limit of a helical layer.
 - **`patternNumber`**: Number of helical bands in the repeating pattern
 - **`skipIndex`**: Band-to-band stride each circuit; must be coprime with `patternNumber`
 - **`lockDegrees`**: Additional mandrel rotation at each turn-around (lock) point. Controls the angular spacing between successive circuits — must be a multiple of `180 / patternNumber` (Condition 1) and produce a slot stride coprime with `patternNumber` (Condition 2). See Geometric Constraints above.

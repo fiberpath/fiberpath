@@ -59,7 +59,12 @@ def plan_hoop_layer(
     tow_parameters: TowParameters,
 ) -> None:
     lock_degrees = 180.0
-    wind_angle = 90.0 - rad_to_deg(math.atan(mandrel_parameters.diameter / tow_parameters.width))
+    # The hoop wind angle is ~90 deg by definition; this is the *delivery-head
+    # lean* that lays the tow flat at that wrap, derived from the tow geometry.
+    # It is not a fiber/wind angle -- see PatternSpec.alpha_deg in planning.pattern.
+    delivery_head_lean = 90.0 - rad_to_deg(
+        math.atan(mandrel_parameters.diameter / tow_parameters.width)
+    )
     mandrel_rotations = mandrel_parameters.wind_length / tow_parameters.width
     far_mandrel = lock_degrees + mandrel_rotations * 360.0
     far_lock = far_mandrel + lock_degrees
@@ -67,14 +72,14 @@ def plan_hoop_layer(
     near_lock = near_mandrel + lock_degrees
 
     machine.move({Axis.CARRIAGE: 0.0, Axis.MANDREL: lock_degrees, Axis.DELIVERY_HEAD: 0.0})
-    machine.move({Axis.DELIVERY_HEAD: -wind_angle})
+    machine.move({Axis.DELIVERY_HEAD: -delivery_head_lean})
     machine.move({Axis.CARRIAGE: mandrel_parameters.wind_length, Axis.MANDREL: far_mandrel})
     machine.move({Axis.MANDREL: far_lock, Axis.DELIVERY_HEAD: 0.0})
 
     if layer.terminal:
         return
 
-    machine.move({Axis.DELIVERY_HEAD: wind_angle})
+    machine.move({Axis.DELIVERY_HEAD: delivery_head_lean})
     machine.move({Axis.CARRIAGE: 0.0, Axis.MANDREL: near_mandrel})
     machine.move({Axis.MANDREL: near_lock, Axis.DELIVERY_HEAD: 0.0})
     machine.zero_axes(near_lock)
