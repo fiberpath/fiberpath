@@ -33,7 +33,11 @@ EXAMPLE_GOLDENS: list[tuple[str, str]] = [
     ("examples/simple_cylinder/input.wind", "examples/simple_cylinder/expected.gcode"),
     ("examples/sized_simple_cylinder/input.wind", "examples/sized_simple_cylinder/expected.gcode"),
     ("examples/multi_layer/input.wind", "examples/multi_layer/expected.gcode"),
-    ("examples/cone_reducer/input.wind", "examples/cone_reducer/expected.gcode"),
+    # NOTE: examples/cone_reducer is intentionally NOT byte-goldened. Its geodesic
+    # path uses acos/asin accumulation whose last rounded digit is not bit-stable
+    # across platforms (Linux vs Windows differ by ~1e-6 on boundary coordinates),
+    # so it is gated by the tolerance-based equivalence harness instead -- see
+    # tests/planning/test_cone.py::test_cone_reducer_example_is_a_valid_geodesic.
     ("examples/rocketry/AvBay(470mm)single.wind", "examples/rocketry/AvBay(470mm)single.gcode"),
     ("examples/rocketry/AvBay(470mm)triple.wind", "examples/rocketry/AvBay(470mm)triple.gcode"),
     ("examples/rocketry/MainChute(585mm).wind", "examples/rocketry/MainChute(585mm).gcode"),

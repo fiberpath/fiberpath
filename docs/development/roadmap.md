@@ -95,7 +95,9 @@ Notes:
   and the coverage validators are type-checkers over the primitive. **Stage 3a adds cones**: `surface.py`
   models the mandrel as a typed `Cylinder`/`Cone`, a reducing frustum is wound as a **geodesic** (Clairaut,
   anchored at the large end) via a new path builder that reuses the same lowering, exposed through the
-  additive `.wind` `endDiameter` field (`schemaVersion 1.1`) with the `cone_reducer` golden.
+  additive `.wind` `endDiameter` field (`schemaVersion 1.1`) with the `cone_reducer` example
+  (gated by the tolerance-based equivalence harness — the geodesic's transcendental coordinates
+  are not bit-stable across platforms, so it is not byte-goldened like the cylinder examples).
 - **Time-model calibration** against the real machine is tracked separately and done when hardware time
   allows ([#130](https://github.com/fiberpath/fiberpath/issues/130)); the engine ships with a
   documented nominal estimate until then.

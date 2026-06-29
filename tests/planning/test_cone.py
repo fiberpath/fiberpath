@@ -129,6 +129,9 @@ def test_cone_reducer_example_is_a_valid_geodesic() -> None:
     assert_cone_geometry(moves, kin)
     assert_cone_coverage(layer, kin, definition.tow_parameters)
     assert_cone_circuit_count(moves, kin.num_circuits)
+    # Platform-robust structural regression gate (an integer, unlike the float
+    # coordinates that make a byte-golden cross-platform-fragile for cones).
+    assert len(moves) == 21922
 
 
 def test_near_degenerate_cone_approaches_cylinder_rotation() -> None:
