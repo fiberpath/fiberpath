@@ -1,17 +1,60 @@
-# `.wind` File Format
+# `.wind` Open Winding-Program Format — Specification
 
-The `.wind` file format is a JSON-based configuration file that defines filament winding patterns for composite manufacturing. It specifies mandrel geometry, tow material properties, and a sequence of winding layers.
+This is the **normative specification** for `.wind`, an open, JSON-based interchange
+format that defines filament-winding patterns for composite manufacturing: mandrel
+geometry, tow material properties, and a sequence of winding layers. It is intended
+for any tool that produces or consumes winding programs, not only FiberPath.
 
-## Schema Version
+| | |
+|---|---|
+| **Status** | Normative, stable within major version 1 |
+| **Current version** | `1.1` (the `schemaVersion` field; see [changelog](#format-changelog)) |
+| **Media type** | `application/vnd.fiberpath.wind+json` (conventional; not IANA-registered) |
+| **Canonical JSON Schema `$id`** | `https://fiberpath.org/schemas/wind/1/wind.schema.json` (major-versioned) |
+| **Customary extension** | `.wind` |
 
-Current schema version: **1.1**
+The format is **machine-checkable**: the canonical JSON Schema above is generated from
+the [Pydantic](https://docs.pydantic.dev/) models in `fiberpath/config/schemas.py` and is
+the authoritative structural contract. This document is normative for the semantics and
+the conformance requirements that the schema alone cannot express.
 
-The schema is formally defined in JSON Schema format and validated using [Pydantic](https://docs.pydantic.dev/) models in the CLI backend.
+## Conventions
 
-The format evolves **additively** within a major version: new optional fields are
-added without breaking older files, and readers tolerate fields they do not know.
-`schemaVersion` is optional and absent is treated as `1.0`. See
-[the changelog](#format-changelog) below.
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, and
+**MAY** in this document are to be interpreted as described in
+[RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
+## Conformance
+
+A **conforming document** is a JSON document that validates against the canonical JSON
+Schema for its major version and additionally satisfies the semantic rules in
+[Validation Rules](#validation-rules).
+
+A **conforming producer** (writer):
+
+- MUST emit a document that validates against the canonical schema;
+- SHOULD set `schemaVersion` to the minor version whose fields it uses;
+- MUST NOT rely on field ordering for meaning.
+
+A **conforming consumer** (reader):
+
+- MUST accept any document whose `schemaVersion` shares its supported **major** version,
+  including unknown **minor** versions (forward compatibility within the major);
+- MUST treat an absent `schemaVersion` as `1.0`;
+- MUST reject a document whose `schemaVersion` major exceeds the one it supports;
+- SHOULD be **tolerant**: ignore unknown object members rather than failing, so that
+  additive minor revisions remain readable.
+
+## Schema version and compatibility policy
+
+Current schema version: **1.1**.
+
+The format evolves **additively within a major version**: a minor revision MAY add
+optional fields or layer/surface types, MUST NOT remove or repurpose existing ones, and
+MUST NOT change the meaning of an existing document. Because revisions are additive, the
+canonical `$id` is **major-only** (`.../wind/1/...`) — every 1.x document validates
+against it, and the `schemaVersion` field carries the minor. A **breaking** change bumps
+the major and mints a new `$id` (`.../wind/2/...`). See [the changelog](#format-changelog).
 
 ## File Structure
 
@@ -289,13 +332,12 @@ This command:
 - **Python Models**: `fiberpath/config/schemas.py`
 - **Validation**: `fiberpath/config/validator.py`
 
-### Backwards Compatibility
+### Backwards compatibility
 
-The `schemaVersion` field allows for future format evolution:
-
-- Version `1.0`: Initial schema with discriminated layer types
-- Future versions may add new layer types or optional fields
-- The CLI maintains backwards compatibility by making `schemaVersion` optional
+The compatibility guarantees are normative and stated in
+[Schema version and compatibility policy](#schema-version-and-compatibility-policy) and
+[Conformance](#conformance): additive-only within a major version, tolerant readers,
+absent `schemaVersion` treated as `1.0`. The changelog below records each minor.
 
 ### Format changelog
 

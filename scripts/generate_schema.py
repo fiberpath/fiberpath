@@ -15,12 +15,13 @@ def main() -> None:
     schema = WindDefinition.model_json_schema(mode="serialization")
 
     # Add metadata. The $id is the canonical, versioned identifier for the open
-    # .wind format (see #141). Additive 1.x revisions validate against this 1.0
-    # schema; bump the path only on a breaking (major) format change.
+    # .wind format (see #141). It is MAJOR-only: additive 1.x revisions (tracked by
+    # the `schemaVersion` field) validate against this same schema and keep this
+    # $id; bump the path only on a breaking (major) format change (.../wind/2/...).
     # Keep pydantic's title ("WindDefinition") so the generated TS root type name
     # stays stable for the GUI consumers; the $id carries the format identity.
     schema["$schema"] = "http://json-schema.org/draft-07/schema#"
-    schema["$id"] = "https://fiberpath.org/schemas/wind/1.0/wind.schema.json"
+    schema["$id"] = "https://fiberpath.org/schemas/wind/1/wind.schema.json"
     schema["description"] = "Schema for FiberPath filament winding pattern definitions"
 
     # schemaVersion is a native field on WindDefinition (default "1.0", pattern

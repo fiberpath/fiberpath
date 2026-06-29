@@ -10,6 +10,17 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ### Added
 
+- **Cone (developable) surface support** (#138): a reducing cone/frustum can be wound
+  by adding an optional `mandrelParameters.endDiameter` (`schemaVersion 1.1`). Helical
+  layers on a cone follow a geodesic (Clairaut) path anchored at the large end — the
+  closed-form, no-friction winding for a developable surface. Cylinder output is
+  unchanged; the `cone_reducer` example is validated by the equivalence harness.
+- **`.wind` is now a normative open-format specification** (#141): the format guide
+  states RFC-2119 conformance requirements for readers/writers and documents the media
+  type `application/vnd.fiberpath.wind+json`. The canonical JSON-Schema `$id` is now
+  **major-versioned** (`https://fiberpath.org/schemas/wind/1/wind.schema.json`): every
+  additive 1.x revision validates against it, and `schemaVersion` carries the minor.
+
 - Helical pattern explainability in the layer editor (#145): the editor now shows
   the derived circuit count inline (`≈ N circuits per layer`) and binds the
   "not divisible by pattern number" mismatch to the Pattern Number field, so the

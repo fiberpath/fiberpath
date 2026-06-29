@@ -145,7 +145,7 @@
       "type": "object"
     }
   },
-  "$id": "https://fiberpath.org/schemas/wind/1.0/wind.schema.json",
+  "$id": "https://fiberpath.org/schemas/wind/1/wind.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Schema for FiberPath filament winding pattern definitions",
   "properties": {
