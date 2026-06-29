@@ -25,7 +25,12 @@ from dataclasses import dataclass
 
 from fiberpath.config.schemas import MandrelParameters, TowParameters
 
-from .calculations import HelicalKinematics
+from .calculations import (
+    ConeHelicalKinematics,
+    HelicalKinematics,
+    cone_geodesic_theta_deg,
+    cone_local_alpha_deg,
+)
 from .helpers import Axis
 from .machine import WinderMachine
 from .pattern import PatternSpec
@@ -177,6 +182,165 @@ def build_helical_developed_path(
                 mandrel_position += (
                     lock_degrees - lead_out_degrees - (pass_rotation_degrees % 360.0)
                 )
+            mandrel_position += start_position_increment
+        mandrel_position += pattern_step_degrees
+
+    # Closing lock move + the final mandrel angle handed to zero_axes.
+    mandrel_position += lock_degrees
+    waypoints.append(
+        Waypoint(
+            z=z,
+            theta=mandrel_position,
+            lean=0.0,
+            lay=False,
+            emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+        )
+    )
+
+    return DevelopedPath(
+        waypoints=tuple(waypoints),
+        emit_initial_near_lock=not spec.skip_initial_near_lock,
+        initial_lock_degrees=lock_degrees,
+        final_angle=mandrel_position,
+        emit_initial_set_position=True,
+        terminal=False,
+    )
+
+
+def _cone_lay_stations(z_from: float, z_to: float) -> list[float]:
+    """Axial sample stations across a cone laying pass (curved in (z, theta)).
+
+    Excludes ``z_from``, includes ``z_to`` exactly, spaced ~1 mm to match the
+    machine's carriage segmentation. The geodesic is sampled at each so the
+    emitted polyline tracks the curve; the machine interpolates linearly between.
+    """
+    span = abs(z_to - z_from)
+    n = max(1, int(round(span)))
+    return [z_from + (z_to - z_from) * (i / n) for i in range(1, n + 1)]
+
+
+def build_cone_helical_developed_path(
+    spec: PatternSpec,
+    kinematics: ConeHelicalKinematics,
+    mandrel: MandrelParameters,
+) -> DevelopedPath:
+    """Build the developed-surface path for a helical layer on a cone (frustum).
+
+    The fiber follows a geodesic -- a straight line in the unrolled sector -- so
+    the mandrel rotation ``theta(z)`` is the closed-form Clairaut integral and the
+    local angle ``alpha(z)`` grows toward the small radius. The main pass is
+    therefore a *curved* polyline in ``(z, theta)`` and is sampled at ~1 mm
+    stations (the delivery-head lean tracks ``alpha(z)``). Mirrors the cylinder
+    helical builder's pass / lead / lock / pattern structure; reuses
+    :func:`lower_developed_path` unchanged.
+
+    Reducing-frustum orientation only (``r0`` at z=0 is the large/anchor end).
+    Shares the cylinder builder's coverage precondition -- ``num_circuits`` (taken
+    at the large end) must be divisible by ``pattern_number``, or the pattern
+    under-tiles; the layer validators enforce this (wired for cones in S3).
+    """
+    lead_out_degrees = spec.lead_out_degrees
+    wind_lead_in_mm = spec.lead_in_mm
+    lock_degrees = spec.lock_degrees
+    pattern_number = spec.pattern_number
+    length = kinematics.length
+
+    num_circuits = kinematics.num_circuits
+    pattern_step_degrees = kinematics.pattern_step_degrees
+    number_of_patterns = num_circuits / pattern_number
+    start_position_increment = spec.skip_index * (360.0 / pattern_number)
+
+    # Full-pass mandrel rotation magnitude (identical for the out and return
+    # passes -- the geodesic spans the same radius range either way). Drives the
+    # turnaround dwell, mirroring the cylinder's pass_rotation_degrees.
+    theta_full = cone_geodesic_theta_deg(length, kinematics)
+
+    def laying_lean(z: float, sign: int) -> float:
+        # Delivery head tracks the local fiber angle: -(90 - alpha(z)).
+        # minimal: half-angle (surface-tilt) correction deferred to hardware
+        # calibration -- it affects tow flatness, not the path geometry.
+        return sign * -1.0 * (90.0 - cone_local_alpha_deg(z, kinematics))
+
+    # (sign, full_pass_end_mm, z_start) per pass direction.
+    pass_parameters = (
+        (1, length, 0.0),
+        (-1, 0.0, length),
+    )
+
+    waypoints: list[Waypoint] = []
+    mandrel_position = 0.0
+    z = 0.0
+    patterns = int(number_of_patterns)
+    for pattern_index in range(patterns):
+        for in_pattern_index in range(pattern_number):
+            comment = (
+                f"\tPattern: {pattern_index + 1}/{patterns} "
+                f"Circuit: {in_pattern_index + 1}/{pattern_number}"
+            )
+            for pass_index, (sign, full_pass_end_mm, z_start) in enumerate(pass_parameters):
+                z = z_start
+                theta_start_abs = cone_geodesic_theta_deg(z_start, kinematics)
+                # (a) pass start: settle mandrel, zero the delivery-head lean.
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=0.0,
+                        lay=False,
+                        emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                        comment=comment if pass_index == 0 else None,
+                    )
+                )
+                # (b) lift the delivery head to the pass-start lean.
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=sign * PASS_START_LEAN_DEG,
+                        lay=False,
+                        emit=frozenset({Axis.DELIVERY_HEAD}),
+                    )
+                )
+                # (c+d) lay: sample the whole geodesic span (lead-in + main pass)
+                # at ~1 mm so theta tracks the curve; the lean ramps from the
+                # pass-start lift to the laying lean over the lead-in, then tracks
+                # alpha(z). The delivery head is re-emitted at every station.
+                lift_lean = sign * PASS_START_LEAN_DEG
+                theta_prev_abs = theta_start_abs
+                for z_sample in _cone_lay_stations(z_start, full_pass_end_mm):
+                    theta_abs = cone_geodesic_theta_deg(z_sample, kinematics)
+                    mandrel_position += abs(theta_abs - theta_prev_abs)
+                    theta_prev_abs = theta_abs
+                    z = z_sample
+                    ramp = min(1.0, abs(z_sample - z_start) / wind_lead_in_mm)
+                    lean = lift_lean + ramp * (laying_lean(z_sample, sign) - lift_lean)
+                    waypoints.append(
+                        Waypoint(
+                            z=z,
+                            theta=mandrel_position,
+                            lean=lean,
+                            lay=True,
+                            emit=frozenset({Axis.CARRIAGE, Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                        )
+                    )
+                # (e) lead-out: rotate through the lead-out, drop to pass-start lean.
+                mandrel_position += lead_out_degrees
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=sign * PASS_START_LEAN_DEG,
+                        lay=False,
+                        emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                    )
+                )
+                # Per-pass turnaround dwell (no emitted move). Mirrors the cylinder
+                # formula. minimal: on a cone theta_full is large, so this can go
+                # negative -> a backward mandrel spin at the turnaround. The laying
+                # geometry (validated here) is unaffected, but the cone turnaround /
+                # lock semantics + pattern distribution need revisiting in S3 (#308),
+                # and the harness should then assert mandrel monotonicity.
+                mandrel_position += lock_degrees - lead_out_degrees - (theta_full % 360.0)
             mandrel_position += start_position_increment
         mandrel_position += pattern_step_degrees
 
