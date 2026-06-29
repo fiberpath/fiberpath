@@ -1,6 +1,9 @@
 <div align="center">
 
-<h1>FiberPath</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-horizontal-reversed.png">
+  <img alt="FiberPath" src="assets/brand/lockup-horizontal.png" width="440">
+</picture>
 
 **Plan, simulate, and manufacture composite parts with precision fiber winding.**
 
