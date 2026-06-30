@@ -23,7 +23,7 @@ def test_default_profile_is_marlin_xab() -> None:
     assert profile.controller == "marlin"
     assert profile.units == "mm"
     assert profile.feed_mode == "G94"
-    assert profile.required_gcodes == ("G0", "G92")
+    assert profile.required_gcodes == ("G0", "G21", "G90", "G92", "G94")
     assert (
         profile.axis_mapping.carriage,
         profile.axis_mapping.mandrel,

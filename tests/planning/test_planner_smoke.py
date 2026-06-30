@@ -17,7 +17,9 @@ def test_plan_wind_returns_commands() -> None:
     result = plan_wind(_reference_definition())
 
     assert result.commands[0].startswith("; Parameters")
-    assert result.commands[1] == "G0 X0 A0 B0"
+    # Header, then the modal preamble (units / positioning / feed mode), then motion.
+    assert [c.split(";")[0].strip() for c in result.commands[1:4]] == ["G21", "G90", "G94"]
+    assert result.commands[4] == "G0 X0 A0 B0"
     assert result.total_time_s > 0
     assert result.layers[0].commands > 0
 

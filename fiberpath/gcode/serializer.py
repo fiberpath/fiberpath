@@ -61,8 +61,14 @@ def render_move(move: Move, mapping: AxisMapping) -> str:
 
 
 def serialize(program: Program, dialect: MarlinDialect) -> list[str]:
-    """Render a Program to G-code lines: header from metadata, then each move."""
+    """Render a Program to G-code lines: header, modal preamble, then each move.
+
+    The preamble (units / absolute positioning / feed mode) is a serialization
+    concern, not motion, so it lives here alongside the header rather than in the
+    Motion IR. ``read_program`` skips these modal lines, so the round-trip stays
+    byte-exact (serialize regenerates them deterministically).
+    """
     mapping = dialect.axis_mapping
-    lines = [_render_header(program.meta)]
+    lines = [_render_header(program.meta), *dialect.prologue()]
     lines.extend(render_move(move, mapping) for move in program.moves)
     return sanitize_program(lines)

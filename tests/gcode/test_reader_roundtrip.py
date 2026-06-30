@@ -87,6 +87,32 @@ def test_lowers_each_opcode() -> None:
     assert program.moves[3].targets == {Axis.CARRIAGE: 10.0, Axis.MANDREL: 360.0}
 
 
+def test_modal_preamble_lines_are_skipped() -> None:
+    # The serialized preamble (mm / absolute / units-per-minute) carries no motion;
+    # the reader drops it and serialize() regenerates it, so round-trips stay
+    # byte-exact.
+    program = read_program(
+        [
+            HEADER,
+            "G21 ; millimeter units",
+            "G90 ; absolute positioning",
+            "G94 ; feed rate in units per minute",
+            "G0 X10",
+        ]
+    )
+    assert [m.kind for m in program.moves] == [MoveKind.RAPID]
+    assert program.moves[0].targets == {Axis.CARRIAGE: 10.0}
+
+
+@pytest.mark.parametrize("opcode", ["G20", "G91", "G93"])
+def test_unhonorable_modes_still_raise(opcode: str) -> None:
+    # inch / relative / inverse-time change how coordinates are read and the reader
+    # cannot honor them, so they must fail loud rather than be skipped and silently
+    # misread as absolute mm.
+    with pytest.raises(ProgramReadError, match=opcode):
+        read_program([HEADER, opcode, "G0 X10"])
+
+
 def test_mixed_feed_and_motion_splits_into_two_moves() -> None:
     # External G-code may put feed on a motion line; generated G-code never does.
     program = read_program([HEADER, "G0 X10 F3000"])

@@ -56,6 +56,16 @@ The format is based on Keep a Changelog, and this project follows semantic versi
   a 404. The port is **not** blindly re-opened (which would DTR-reset a possibly
   moving controller) — recovery is an explicit reconnect.
 
+### Changed
+
+- **G-code output now begins with a modal preamble** (#322): every program emits
+  `G21` (mm), `G90` (absolute positioning), and `G94` (feed in units/min) right
+  after the `; Parameters` header, so it no longer silently depends on the
+  controller's power-on modal state. The preamble is derived from the machine
+  profile; `read_program` skips modal lines (round-trip stays byte-exact). The
+  `marlin-xab` profile's `requiredGcodes` now lists these opcodes. (Example
+  goldens regenerated: motion bytes unchanged, three preamble lines added.)
+
 ### Fixed
 
 - The GUI API client memoised the sidecar base URL for the app's lifetime, so

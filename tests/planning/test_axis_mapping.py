@@ -24,7 +24,8 @@ def test_default_dialect_is_xab_standard() -> None:
     result_xab = plan_wind(definition, PlanOptions(profile=default_machine_profile()))
 
     assert result_default.commands == result_xab.commands
-    assert result_default.commands[1] == "G0 X0 A0 B0"
+    # commands[1:4] is the modal preamble; the first motion line follows it.
+    assert result_default.commands[4] == "G0 X0 A0 B0"
 
 
 def test_xab_output_generates_expected_axis_letters() -> None:
@@ -111,7 +112,7 @@ def test_custom_axis_mapping() -> None:
     )
 
     result = plan_wind(definition, PlanOptions(profile=custom_profile))
-    assert result.commands[1] == "G0 X0 C0 A0"
+    assert result.commands[4] == "G0 X0 C0 A0"  # after header + 3 preamble lines
     move_commands = [cmd for cmd in result.commands if cmd.startswith("G0") or cmd.startswith("G1")]
     assert any(" C" in cmd for cmd in move_commands)
     assert any(" A" in cmd for cmd in move_commands)

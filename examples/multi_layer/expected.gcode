@@ -1,4 +1,7 @@
 ; Parameters {"irVersion":"1.0","mandrel":{"diameter":69.75,"windLength":940},"tow":{"width":7,"thickness":0.5}}
+G21 ; millimeter units
+G90 ; absolute positioning
+G94 ; feed rate in units per minute
 G0 X0 A0 B0
 G0 F9000
 ; Layer 1 of 2: hoop

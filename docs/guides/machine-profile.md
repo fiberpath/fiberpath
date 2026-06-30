@@ -38,7 +38,7 @@ The bundled canonical profile is `marlin-xab`
   "units": "mm",
   "feedMode": "G94",
   "axisMapping": { "carriage": "X", "mandrel": "A", "deliveryHead": "B" },
-  "requiredGcodes": ["G0", "G92"]
+  "requiredGcodes": ["G0", "G21", "G90", "G92", "G94"]
 }
 ```
 
@@ -46,14 +46,11 @@ The bundled canonical profile is `marlin-xab`
 
 A controller is compatible with this profile if it:
 
-- **MUST** support every opcode in `requiredGcodes` (`G0` rapid/linear move,
-  `G92` set position).
-- **MUST** interpret coordinates in the profile's `units` (`mm`) and feed rates
-  in units per minute (`feedMode` `G94`). FiberPath authors coordinates in mm and
-  feed in mm/min and does **not** currently emit the `G21`/`G94` mode-setting
-  codes, so the controller MUST already default to (or be configured for) those
-  modes. (Whether FiberPath should emit those setup codes is tracked in
-  [#322](https://github.com/fiberpath/fiberpath/issues/322).)
+- **MUST** support every opcode in `requiredGcodes`. Each program begins with a
+  modal preamble — `G21` (mm units), `G90` (absolute positioning), `G94` (feed
+  rate in units per minute) — followed by motion via `G0` and `G92` (set
+  position). Emitting the preamble makes the program self-describing rather than
+  dependent on the controller's power-on modal state.
 - **MUST** drive the carriage on the `axisMapping.carriage` axis as a linear axis
   (mm) and the mandrel/delivery-head on their mapped axes as rotational axes
   (degrees).

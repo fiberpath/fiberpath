@@ -43,8 +43,19 @@ class MarlinDialect:
     axis_mapping: AxisMapping = field(default_factory=AxisMapping)
 
     def prologue(self) -> list[str]:
-        """Return G-code commands for controller initialization."""
-        return ["G21" if self.units == "mm" else "G20", self.feed_mode]
+        """Modal setup lines emitted before motion so the program is self-describing.
+
+        The planner authors absolute coordinates in the dialect's units and feeds
+        in units-per-minute; without this preamble the program would silently
+        inherit whatever modal state the controller happened to be in (#322).
+        """
+        units_code = "G21" if self.units == "mm" else "G20"
+        units_label = "millimeter" if self.units == "mm" else "inch"
+        return [
+            f"{units_code} ; {units_label} units",
+            "G90 ; absolute positioning",
+            f"{self.feed_mode} ; feed rate in units per minute",
+        ]
 
 
 def dialect_from_profile(profile: MachineProfile) -> MarlinDialect:

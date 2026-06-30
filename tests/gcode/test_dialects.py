@@ -43,9 +43,7 @@ def test_custom_marlin_dialect() -> None:
 
 
 def test_marlin_dialect_prologue() -> None:
-    """Verify that MarlinDialect generates correct prologue commands."""
-    dialect = MarlinDialect()
-    prologue = dialect.prologue()
+    """The preamble sets units, absolute positioning, and feed mode (in order)."""
+    prologue = MarlinDialect().prologue()
 
-    assert "G21" in prologue
-    assert "G94" in prologue
+    assert [line.split(";")[0].strip() for line in prologue] == ["G21", "G90", "G94"]

@@ -1,4 +1,7 @@
 ; Parameters {"irVersion":"1.0","mandrel":{"diameter":151.5,"windLength":630},"tow":{"width":5.7,"thickness":0.5}}
+G21 ; millimeter units
+G90 ; absolute positioning
+G94 ; feed rate in units per minute
 G0 X0 A0 B0
 G0 F3000
 ; Layer 1 of 1: helical
