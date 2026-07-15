@@ -32,6 +32,7 @@ jobs:
         run: uvx --with pip-audit pip-audit -r requirements-audit.txt --format json --output pip-audit.json
 
       - name: Upload pip-audit report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: pip-audit-report
@@ -55,6 +56,7 @@ jobs:
         run: npm audit --audit-level=high --json > npm-audit.json
 
       - name: Upload npm audit report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: npm-audit-report
@@ -80,40 +82,18 @@ jobs:
         run: cargo audit --version 2>/dev/null || cargo install cargo-audit --locked
 
       - name: Run cargo audit (JSON report)
-        run: cargo audit --json > cargo-audit.json
+        # cargo audit exits non-zero whenever it finds advisories (vulnerabilities
+        # OR informational warnings), so its exit code cannot gate on severity.
+        # Capture the report and let the CVSS gate below decide. `|| true` here is
+        # safe *because* the gate re-parses the report and fails closed if it is
+        # missing or malformed (a genuine tool/network error) — see the gate step.
+        run: cargo audit --json > cargo-audit.json || true
 
       - name: Enforce CVSS >= 7.0 gate
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          report = json.loads(Path("cargo-audit.json").read_text(encoding="utf-8"))
-          vulns = report.get("vulnerabilities", {}).get("list", [])
-
-          blocking = []
-          for item in vulns:
-              advisory = item.get("advisory", {})
-              cvss = advisory.get("cvss")
-              if cvss is None:
-                  continue
-              try:
-                  score = float(cvss)
-              except (TypeError, ValueError):
-                  continue
-              if score >= 7.0:
-                  blocking.append((advisory.get("id", "unknown"), score, advisory.get("title", "")))
-
-          if blocking:
-              print("High/Critical Cargo advisories detected:")
-              for advisory_id, score, title in blocking:
-                  print(f"- {advisory_id} (CVSS {score}): {title}")
-              raise SystemExit(1)
-
-          print("No Cargo advisories with CVSS >= 7.0 detected.")
-          PY
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/cargo_audit_gate.py" cargo-audit.json
 
       - name: Upload cargo audit report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: cargo-audit-report
