@@ -28,7 +28,12 @@ _spec.loader.exec_module(gate)
         ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8),
         ("CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N", 1.8),
         ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", 10.0),
-        ("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", 7.5),  # 3.0 shares the formula
+        ("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", 7.5),  # unchanged scope: 3.0 == 3.1
+        # Changed-scope: the v3.1 formula differs from v3.0. These pin v3.1 and
+        # would catch a regression to the v3.0 impact sub-score (which yields
+        # 9.6 and 6.9 respectively — the latter a silent miss at the boundary).
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:H", 9.7),
+        ("CVSS:3.1/AV:P/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H", 7.0),
     ],
 )
 def test_cvss3_base_score(vector: str, expected: float) -> None:
@@ -77,6 +82,13 @@ def test_blocks_on_high_severity() -> None:
 def test_passes_below_threshold() -> None:
     report = _report(_vuln("X-1", "CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N"))
     assert gate.evaluate(report) == 0
+
+
+def test_blocks_at_changed_scope_boundary() -> None:
+    # v3.1 scores this exactly 7.0 and must block; the v3.0 formula scored it
+    # 6.9 and let it through — the silent miss this gate exists to prevent.
+    report = _report(_vuln("X-3", "CVSS:3.1/AV:P/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H"))
+    assert gate.evaluate(report) == 1
 
 
 def test_unscored_vuln_does_not_block() -> None:
