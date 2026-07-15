@@ -39,9 +39,11 @@ def _roundup(value: float) -> float:
 
 
 def cvss3_base_score(vector: str) -> float:
-    """Compute a CVSS v3.0/3.1 base score from its vector string.
+    """Compute a CVSS v3.1 base score from its vector string.
 
-    Raises ValueError if the string is not a parseable CVSS v3.x base vector.
+    Uses the v3.1 formula, which is identical to v3.0 except for the
+    changed-scope impact sub-score. Raises ValueError if the string is not a
+    parseable CVSS v3.x base vector.
     """
     if not vector.startswith("CVSS:3."):
         raise ValueError(f"not a CVSS v3.x vector: {vector!r}")
@@ -58,7 +60,9 @@ def cvss3_base_score(vector: str) -> float:
 
     iss = 1 - (1 - conf) * (1 - integ) * (1 - avail)
     if scope_changed:
-        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+        # CVSS v3.1 changed-scope impact (v3.0 used ``(iss - 0.02) ** 15``,
+        # which under-scores by up to ~0.1 and can miss the 7.0 boundary).
+        impact = 7.52 * (iss - 0.029) - 3.25 * (iss * 0.9731 - 0.02) ** 13
     else:
         impact = 6.42 * iss
     if impact <= 0:
@@ -88,11 +92,12 @@ def score_of(cvss: object) -> float | None:
 
 def evaluate(report: dict) -> int:
     """Print an audit summary and return the intended process exit code."""
-    if "vulnerabilities" not in report:
-        print("::error::cargo audit report missing 'vulnerabilities' key", file=sys.stderr)
+    vulnerabilities = report.get("vulnerabilities")
+    if not isinstance(vulnerabilities, dict) or "list" not in vulnerabilities:
+        print("::error::cargo audit report missing 'vulnerabilities.list'", file=sys.stderr)
         return 1
 
-    vulns = report["vulnerabilities"]["list"]
+    vulns = vulnerabilities["list"]
     warnings = report.get("warnings", {})
 
     blocking: list[tuple[str, str, str, float | None, str]] = []
