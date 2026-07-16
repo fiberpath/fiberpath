@@ -1,3 +1,8 @@
+# Policy: High/Critical vulnerabilities block; everything else is reported but
+# does not block. Full tree (dev + build deps) is in scope. Python is
+# deliberately stricter (any advisory blocks) because pip-audit cannot tier by
+# severity. Allowlist mechanics, rationale, and the accepted-advisory record
+# live in docs/development/dependency-policy.md ("CI audit gating").
 name: Dependency Audit
 
 on:
@@ -28,7 +33,11 @@ jobs:
       - name: Export requirements for audit
         run: uv export --all-extras --no-hashes --format requirements-txt -o requirements-audit.txt
 
-      - name: Run pip-audit (JSON report)
+      - name: Run pip-audit (blocks on any advisory)
+        # pip-audit has no severity filter, so any advisory fails this step —
+        # the deliberate policy for Python. To accept a triaged advisory, add
+        # `--ignore-vuln <ID>` here AND record the reasoning in
+        # docs/development/dependency-policy.md.
         run: uvx --with pip-audit pip-audit -r requirements-audit.txt --format json --output pip-audit.json
 
       - name: Upload pip-audit report
@@ -53,6 +62,10 @@ jobs:
         uses: ./.github/actions/setup-node
 
       - name: Run npm audit (high/critical gate)
+        # npm exits non-zero only at/above --audit-level, which IS the gate.
+        # npm has no per-advisory ignore: to accept a triaged high/critical,
+        # add a post-processor gate (mirror cargo_audit_gate.py) — do NOT
+        # lower --audit-level. See docs/development/dependency-policy.md.
         run: npm audit --audit-level=high --json > npm-audit.json
 
       - name: Upload npm audit report
