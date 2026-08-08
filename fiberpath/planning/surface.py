@@ -133,6 +133,33 @@ class VonKarman:
             -(2.0 * self.base_radius * math.pi**-0.5 / self.length) * math.sin(theta_p) / v**0.5
         )
 
+    def radius_curvature_at(self, z: float) -> float:
+        """``d²r/dz²`` (analytic, cancelled closed form) — needed by the non-geodesic solver.
+
+        Differentiating ``r'(z) = -(2R/(sqrt(pi)L))·sin(theta_p)/sqrt(V)`` gives
+
+            r''(z) = (4R / (sqrt(pi)·L²)) · [ cos(theta_p)/(sin(theta_p)·sqrt(V))
+                                              − sin²(theta_p)/V^{3/2} ] .
+
+        Unlike ``r'`` (which is 0 at the base and only singular at the tip), ``r''`` is
+        **singular at BOTH ends**: near the base the LD-Haack meridian is
+        ``r ≈ R − a·z^{3/2}`` so ``r'' ∝ −z^{-1/2} → −∞`` at z=0, and it diverges again at
+        the tip (V→0). The singularities are integrable, but the closed form must not be
+        evaluated there — the non-geodesic integrator starts one grid step in from the
+        base and stops well below the tip. Raises on the open-interval boundary.
+        """
+        if not 0.0 < z < self.length:
+            raise ValueError(
+                "radius_curvature_at is undefined at the base (z=0) and tip (z=length): "
+                f"r'' diverges at both ends; got z={z}"
+            )
+        theta_p = self._theta_p(z)
+        v = self._shape_v(theta_p)
+        sin_tp = math.sin(theta_p)
+        coeff = 4.0 * self.base_radius * math.pi**-0.5 / (self.length * self.length)
+        # ** 0.5 / ** 1.5 (not math.sqrt — reserved to metrics.py by the Motion IR guard).
+        return float(coeff * (math.cos(theta_p) / (sin_tp * v**0.5) - sin_tp * sin_tp / v**1.5))
+
     def diameter_at(self, z: float) -> float:
         return 2.0 * self.radius_at(z)
 

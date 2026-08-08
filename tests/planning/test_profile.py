@@ -27,6 +27,7 @@ from fiberpath.gcode.serializer import serialize
 from fiberpath.planning.calculations import (
     ProfileHelicalKinematics,
     ProfileReachabilityError,
+    _integrate_nongeodesic,
     _profile_theta_integrand,
     compute_cone_helical_kinematics,
     compute_profile_helical_kinematics,
@@ -206,6 +207,160 @@ def test_theta_is_clamped_outside_the_band() -> None:
     assert profile_geodesic_theta_deg(kin.z_cap + 10.0, kin) == pytest.approx(
         profile_geodesic_theta_deg(kin.z_cap, kin)
     )
+
+
+# --- Non-geodesic (friction-assisted) integrator — Phase 2 (#327) --- #
+
+
+def _lerp(grid: tuple[float, ...], values: tuple[float, ...], z: float) -> float:
+    """Independent linear interpolation of a marched table (not the production helper)."""
+    if z <= grid[0]:
+        return values[0]
+    if z >= grid[-1]:
+        return values[-1]
+    hi = next(i for i in range(1, len(grid)) if grid[i] >= z)
+    frac = (z - grid[hi - 1]) / (grid[hi] - grid[hi - 1])
+    return values[hi - 1] + frac * (values[hi] - values[hi - 1])
+
+
+class _CylinderProfile:
+    """Constant-radius surface stub (r' = r'' = 0): isolates the friction k_n term."""
+
+    def __init__(self, radius: float, length: float = 60.0) -> None:
+        self.radius, self.length = radius, length
+
+    def radius_at(self, z: float) -> float:  # noqa: ARG002 - constant
+        return self.radius
+
+    def radius_slope_at(self, z: float) -> float:  # noqa: ARG002 - flat
+        return 0.0
+
+    def radius_curvature_at(self, z: float) -> float:  # noqa: ARG002 - flat
+        return 0.0
+
+
+def test_nongeodesic_reduces_to_the_geodesic_at_zero_friction() -> None:
+    # lambda = 0 => dalpha/dz = -tan(a) r'/r and dtheta/dz = tan(a) sqrt(1+r'^2)/r, which
+    # analytically preserve the Clairaut geodesic. The marched alpha(z)/theta(z) must
+    # reproduce the production geodesic tables element-wise (the correctness anchor).
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    geo = compute_profile_helical_kinematics(_layer(30.0), vk, TOW)  # geodesic branch
+    grid, alpha_deg, theta_deg = _integrate_nongeodesic(vk, 30.0, 0.0)
+    # The march runs past the guarded geodesic cap (to alpha_max); compare only within
+    # the geodesic band [0, z_cap].
+    for z in (10.0, 50.0, 120.0, geo.z_cap - 1.0):
+        assert _lerp(grid, alpha_deg, z) == pytest.approx(profile_local_alpha_deg(z, geo), abs=2e-3)
+        assert _lerp(grid, theta_deg, z) == pytest.approx(
+            profile_geodesic_theta_deg(z, geo), abs=1e-2
+        )
+
+
+def test_nongeodesic_on_a_cylinder_matches_the_closed_form() -> None:
+    # Independent analytic oracle isolating the k_n term (no r'/r term on a cylinder):
+    #   r' = r'' = 0  =>  dalpha/dz = -lambda*sin^2(a)/(r*cos(a)),
+    # whose closed form is 1/sin(alpha(z)) = 1/sin(alpha_0) + lambda*z/r. Pins the k_n
+    # coefficient AND sign, independent of the RK4 structure (a copied-k_n bug can't hide).
+    r = 40.0
+    cyl = _CylinderProfile(r)
+    a0 = math.radians(30.0)
+    for lam in (0.05, 0.1, 0.2):
+        grid, alpha_deg, _ = _integrate_nongeodesic(cyl, 30.0, lam, alpha_max_deg=80.0)  # type: ignore[arg-type]
+        for z in (5.0, 20.0, 50.0):
+            predicted = 1.0 / math.sin(a0) + lam * z / r
+            alpha = math.radians(_lerp(grid, alpha_deg, z))
+            assert 1.0 / math.sin(alpha) == pytest.approx(predicted, rel=5e-4)
+
+
+def test_nongeodesic_matches_an_independently_written_integrator() -> None:
+    # A freshly transcribed ODE (catches a coefficient/sign typo in the production derivs)
+    # solved by a DIFFERENT, independently adaptive method — midpoint RK2 whose step shrinks
+    # with |dalpha/dz| so it stays accurate through the steep near-cap tail (where a fixed
+    # step is under-resolved). Sampled up into that tail, not just the flat region.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    lam = 0.1
+
+    def d_alpha(z: float, a: float) -> float:
+        r, rp, rpp = vk.radius_at(z), vk.radius_slope_at(z), vk.radius_curvature_at(z)
+        m = math.sqrt(1.0 + rp * rp)
+        k_n = -rpp * math.cos(a) ** 2 / m**3 + math.sin(a) ** 2 / (r * m)
+        return (-lam * k_n * m - math.sin(a) * rp / r) / math.cos(a)
+
+    def alpha_indep_deg(z_target: float) -> float:
+        a, z = math.radians(30.0), 1.0e-3
+        while z < z_target:
+            da = d_alpha(z, a)
+            h = min(0.02, math.radians(0.05) / max(abs(da), 1e-12), z_target - z)
+            a += h * d_alpha(z + h / 2, a + h / 2 * da)  # midpoint (RK2)
+            z += h
+        return math.degrees(a)
+
+    kin = compute_profile_helical_kinematics(_layer(30.0), vk, TOW, friction_lambda=lam)
+    grid, alpha_deg = kin.grid_z, kin.alpha_table
+    assert alpha_deg is not None
+    # Includes the steep tail: alpha ~ 82 deg at z_cap-2, still climbing hard toward 88.
+    for z in (30.0, 90.0, 180.0, 240.0, kin.z_cap - 2.0):
+        assert _lerp(grid, alpha_deg, z) == pytest.approx(alpha_indep_deg(z), abs=8e-2)
+
+
+def test_friction_reaches_past_the_geodesic_cap() -> None:
+    # The headline: friction lets a pass climb past the geodesic turnaround toward the tip.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    geo = compute_profile_helical_kinematics(_layer(30.0), vk, TOW)
+    fric = compute_profile_helical_kinematics(_layer(30.0), vk, TOW, friction_lambda=0.1)
+    assert fric.z_cap > geo.z_cap  # winds deeper (further toward the tip)
+    assert fric.cap_diameter < geo.cap_diameter  # leaves a smaller bare cap
+    assert fric.alpha_table is not None  # non-geodesic carries a marched angle table
+    assert geo.alpha_table is None  # geodesic uses the closed-form asin(C/r)
+
+
+def test_cap_shrinks_monotonically_as_friction_rises() -> None:
+    # Direction is the sign-error catch: more friction must strictly shrink the bare cap
+    # (and raise the turnaround slip demand). A wrong-signed k_n would grow the cap instead.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    kins = [
+        compute_profile_helical_kinematics(_layer(30.0), vk, TOW, friction_lambda=lam)
+        for lam in (0.05, 0.1, 0.2, 0.3)
+    ]
+    caps = [k.cap_diameter for k in kins]
+    dwells = [k.cap_dwell_slope for k in kins]
+    assert all(later < earlier for earlier, later in pairwise(caps))
+    assert all(later > earlier for earlier, later in pairwise(dwells))
+
+
+def test_nongeodesic_z_cap_is_converged_and_step_stable() -> None:
+    # The whole no-byte-goldens scheme rests on a CONVERGED, platform-stable floored z_cap.
+    # A fixed-step march is NOT converged in the steep near-cap tail (z_cross came out mm-wrong
+    # and step-dependent for moderate lambda); the adaptive step fixes that. Assert the floored
+    # z_cap is unchanged when the per-step angle cap is halved, across an adversarial
+    # lambda x base-angle grid that includes the values a fixed step got wrong (0.17/0.28/0.33).
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    for lam in (0.1, 0.17, 0.28, 0.33, 0.4):
+        for angle in (20.0, 30.0, 45.0):
+            g_full, _, _ = _integrate_nongeodesic(vk, angle, lam)
+            g_half, _, _ = _integrate_nongeodesic(vk, angle, lam, alpha_step_cap_deg=0.05)
+            assert math.floor(g_full[-1] + 1e-6) == math.floor(g_half[-1] + 1e-6), (
+                f"z_cap not step-stable at lambda={lam}, angle={angle}: "
+                f"{g_full[-1]:.4f} vs {g_half[-1]:.4f}"
+            )
+
+
+def test_nongeodesic_alpha_is_read_from_the_table_and_grows_toward_the_tip() -> None:
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    kin = compute_profile_helical_kinematics(_layer(30.0), vk, TOW, friction_lambda=0.1)
+    assert profile_local_alpha_deg(0.0, kin) == pytest.approx(30.0, abs=1e-6)  # base anchor
+    alphas = [profile_local_alpha_deg(z, kin) for z in (0.0, 60.0, 150.0, kin.z_cap)]
+    assert all(later >= earlier for earlier, later in pairwise(alphas))
+    # z_cap floors just below the alpha_max=88 crossing (alpha rockets up in the last steep
+    # sub-mm near the coordinate singularity); the marched table tops out at ~88 deg.
+    assert 80.0 < alphas[-1] < 88.0
+    assert kin.alpha_table[-1] == pytest.approx(88.0, abs=1e-6)
+
+
+def test_nongeodesic_steep_base_angle_leaves_no_band() -> None:
+    # A base angle already at/above the integrator ceiling yields no wound band.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    with pytest.raises(ProfileReachabilityError, match="shorter than one station"):
+        compute_profile_helical_kinematics(_layer(89.0), vk, TOW, friction_lambda=0.1)
 
 
 # --- Reachability / degenerate guards --- #

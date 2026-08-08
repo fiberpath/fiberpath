@@ -98,3 +98,37 @@ def test_vonkarman_diameter_and_circumference_track_radius() -> None:
     z = 120.0
     assert vk.diameter_at(z) == 2.0 * vk.radius_at(z)
     assert vk.circumference_at(z) == math.pi * vk.diameter_at(z)
+
+
+# --- r'' (needed by the non-geodesic solver, #327) --- #
+
+
+def test_vonkarman_curvature_matches_central_difference_of_slope() -> None:
+    # r'' is the only new analytic derivative feeding the friction ODE. Pin the cancelled
+    # closed form against a central difference of the (independently verified) r' at
+    # interior points; both ends are singular so they are excluded.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    h = 1e-3
+    for z in range(20, 281, 20):
+        fd = (vk.radius_slope_at(z + h) - vk.radius_slope_at(z - h)) / (2.0 * h)
+        assert vk.radius_curvature_at(float(z)) == pytest.approx(fd, rel=1e-4, abs=1e-7)
+
+
+def test_vonkarman_curvature_raises_at_both_ends() -> None:
+    # Unlike r' (finite at the base), r'' diverges at BOTH the base and the tip.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    with pytest.raises(ValueError, match="base"):
+        vk.radius_curvature_at(0.0)
+    with pytest.raises(ValueError, match="tip"):
+        vk.radius_curvature_at(300.0)
+
+
+def test_vonkarman_curvature_diverges_like_inverse_sqrt_at_the_base() -> None:
+    # The LD-Haack meridian is r ~ R - a*z^{3/2} near the base, so r'' ~ -c*z^{-1/2}:
+    # r'' * sqrt(z) approaches a negative constant as z -> 0 (an integrable singularity).
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    scaled = [vk.radius_curvature_at(z) * z**0.5 for z in (0.5, 0.1, 0.02, 0.005)]
+    assert all(v < 0.0 for v in scaled)  # r'' < 0 near the base
+    # Converging to a constant: successive steps toward z=0 shrink.
+    steps = [abs(scaled[i + 1] - scaled[i]) for i in range(len(scaled) - 1)]
+    assert all(later < earlier for earlier, later in pairwise(steps))
