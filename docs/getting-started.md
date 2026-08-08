@@ -144,6 +144,8 @@ fiberpath plan my_first_wind.wind -o my_first.gcode
 fiberpath plan input.wind -o output.gcode
 # Verbose output with layer details
 fiberpath plan input.wind -o output.gcode --verbose
+# Use a calibrated machine profile (sets the slip limit for non-geodesic winding)
+fiberpath plan input.wind -o output.gcode --profile my-winder.machine.json
 ```
 
 ### Visualization

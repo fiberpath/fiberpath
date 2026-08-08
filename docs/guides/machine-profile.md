@@ -76,5 +76,13 @@ profile = load_machine_profile("my-winder.machine.json")
 result = plan_wind(definition, PlanOptions(profile=profile))
 ```
 
-The CLI, API, and GUI export paths all use the default profile; no flag is
-required for standard Marlin X/A/B winders.
+From the CLI, pass a profile with `--profile`:
+
+```console
+fiberpath plan mypart.wind --profile my-winder.machine.json -o mypart.gcode
+```
+
+This is how an operator supplies a **calibrated `slipLimit`** so that non-geodesic
+layers (`frictionLambda`) are validated against their own machine's slip limit rather
+than the bundled default. Standard Marlin X/A/B winders need no flag — the default
+profile applies. The API and GUI export paths currently use the default profile.

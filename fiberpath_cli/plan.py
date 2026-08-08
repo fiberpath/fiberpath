@@ -6,7 +6,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 import typer
-from fiberpath.config import WindFileError, load_wind_definition
+from fiberpath.config import (
+    MachineProfileError,
+    WindFileError,
+    default_machine_profile,
+    load_machine_profile,
+    load_wind_definition,
+)
 from fiberpath.gcode import write_gcode
 from fiberpath.planning import PlanOptions, plan_wind
 from rich.console import Console
@@ -21,6 +27,15 @@ OUTPUT_OPTION = typer.Option(
     Path("output.gcode"), "--output", "-o", help="Destination for generated G-code"
 )
 VERBOSE_OPTION = typer.Option(False, "--verbose", "-v", help="Emit verbose planner output")
+PROFILE_OPTION = typer.Option(
+    None,
+    "--profile",
+    help=(
+        "Machine profile JSON (controller/dialect + slip limit μ). Defaults to the bundled "
+        "marlin-xab profile. Supply a calibrated profile to set the slipLimit that bounds a "
+        "layer's non-geodesic frictionLambda."
+    ),
+)
 JSON_OPTION = typer.Option(
     False,
     "--json",
@@ -33,14 +48,26 @@ def plan_command(
     output: Path = OUTPUT_OPTION,
     verbose: bool = VERBOSE_OPTION,
     json_output: bool = JSON_OPTION,
+    profile: Path | None = PROFILE_OPTION,
 ) -> None:
     try:
         wind_definition = load_wind_definition(wind_file)
     except WindFileError as exc:  # pragma: no cover - CLI glue
         raise typer.BadParameter(str(exc)) from exc
 
+    # The machine profile carries the controller/dialect and the slip limit μ that bounds a
+    # layer's frictionLambda. load_machine_profile validates existence + schema, surfaced as a
+    # BadParameter (a bad --profile is user input, not a planner failure).
+    if profile is not None:
+        try:
+            machine_profile = load_machine_profile(profile)
+        except MachineProfileError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    else:
+        machine_profile = default_machine_profile()
+
     try:
-        result = plan_wind(wind_definition, PlanOptions(verbose=verbose))
+        result = plan_wind(wind_definition, PlanOptions(verbose=verbose, profile=machine_profile))
     except Exception as exc:  # pragma: no cover - defensive guard
         typer.echo(f"Planning failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
