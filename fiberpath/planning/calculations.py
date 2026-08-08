@@ -176,6 +176,19 @@ _CAP_GUARD_MM = 0.5
 # interpolation) holds theta(z) to well under 1e-3 deg even in the steep near-cap
 # region; trapezoid error is O(h^2), so this is ~4x tighter than a 0.1 mm grid.
 _THETA_GRID_STEP_MM = 0.05
+#: Integrator ceiling for the non-geodesic march (deg). The turnaround is a *coordinate*
+# singularity (dalpha/dz ∝ 1/cos(alpha) → ∞ at 90°, at every friction level), so the RK4
+# march stops at this fixed angle — comfortably in the Lipschitz region — and the exact
+# crossing is bisected within the last cell. Phase 2 (#327) non-geodesic winding only.
+_ALPHA_MAX_DEG = 88.0
+#: Max fibre-angle advance (deg) per adaptive RK4 step. The step shrinks to hold this bound
+# where dalpha/dz stiffens (the base r'' spike and the near-cap tail), keeping z_cross
+# converged and platform-stable; the flat region is unaffected (capped at the grid step).
+_ALPHA_STEP_CAP_DEG = 0.1
+#: Where the alpha-march begins (mm). The analytic r'' diverges exactly at the base (z=0);
+# starting a hair in avoids it. Small enough that the un-marched [0, z_start] seed shifts
+# z_cross by << the floor tolerance (verified by z_start-refinement in the tests).
+_MARCH_START_MM = 1.0e-3
 
 
 class ProfileReachabilityError(ValueError):
@@ -204,6 +217,14 @@ class ProfileHelicalKinematics:
     # interpolated by ``profile_geodesic_theta_deg``. Parallel, monotone in z.
     grid_z: tuple[float, ...]
     cum_theta_deg: tuple[float, ...]
+    #: Non-geodesic (#327) only: local fibre angle alpha(z) (deg), parallel to ``grid_z``,
+    # read by ``profile_local_alpha_deg`` when present. ``None`` on a geodesic layer, whose
+    # angle is the closed-form ``asin(C/r)`` instead of a marched table.
+    alpha_table: tuple[float, ...] | None = None
+    #: Turnaround slip demand at the cap: ``|r'(z_cap)|`` (the friction the circumferential
+    # reversal needs). Reported by the Phase-2 validator; ``> mu`` flags a Phase-3 (#328)
+    # 4th-axis delivery. Grows toward the tip.
+    cap_dwell_slope: float = 0.0
 
 
 def _profile_theta_integrand(surface: VonKarman, z: float, c: float) -> float:
@@ -236,21 +257,153 @@ def _profile_z_at_radius(surface: VonKarman, target_r: float) -> float:
     return 0.5 * (lo + hi)
 
 
+# --------------------------------------------------------------------------- #
+# Non-geodesic (friction-assisted) profile winding — Stage 3b Phase 2 (#327)   #
+#                                                                             #
+# Letting the fibre slip up to k_g/k_n = lambda lets a pass climb PAST the     #
+# geodesic turnaround at r=C toward the tip. There is no closed form even on   #
+# a developable surface, so alpha(z) is forward-integrated (RK4) alongside      #
+# theta(z). lambda = lambda_user >= 0 steers toward the tip (engine sign is    #
+# -lambda). lambda = 0 recovers the geodesic exactly (the -sin(a)r'/r term).   #
+# --------------------------------------------------------------------------- #
+
+
+def _nongeodesic_derivs(
+    surface: VonKarman, z: float, alpha: float, friction_lambda: float
+) -> tuple[float, float]:
+    """``(dalpha/dz, dtheta/dz)`` for the non-geodesic ODE at ``(z, alpha)`` (rad, rad/mm).
+
+        dalpha/dz = [ -lambda·k_n·sqrt(1+r'^2) - sin(a)·r'/r ] / cos(a)
+        k_n       = -r''·cos^2(a)/(1+r'^2)^{3/2} + sin^2(a)/(r·sqrt(1+r'^2))
+        dtheta/dz = tan(a)·sqrt(1+r'^2)/r
+
+    ``sqrt(1+r'^2)`` is ``math.hypot`` and ``(1+r'^2)^{3/2}`` is ``meridian**3`` — neither
+    uses the ``math.sqrt`` call reserved to metrics.py by the Motion IR single-source guard.
+    """
+    r = surface.radius_at(z)
+    r_prime = surface.radius_slope_at(z)
+    r_curv = surface.radius_curvature_at(z)
+    meridian = math.hypot(1.0, r_prime)  # sqrt(1 + r'^2)
+    sin_a, cos_a = math.sin(alpha), math.cos(alpha)
+    k_n = -r_curv * cos_a * cos_a / meridian**3 + sin_a * sin_a / (r * meridian)
+    d_alpha = (-friction_lambda * k_n * meridian - sin_a * r_prime / r) / cos_a
+    d_theta = (sin_a / cos_a) * meridian / r
+    return d_alpha, d_theta
+
+
+def _nongeodesic_rk4_step(
+    surface: VonKarman, z: float, alpha: float, theta: float, dz: float, friction_lambda: float
+) -> tuple[float, float]:
+    """One classic RK4 step of the coupled ``(alpha, theta)`` system over ``[z, z+dz]``."""
+    a1, t1 = _nongeodesic_derivs(surface, z, alpha, friction_lambda)
+    a2, t2 = _nongeodesic_derivs(surface, z + dz / 2, alpha + dz / 2 * a1, friction_lambda)
+    a3, t3 = _nongeodesic_derivs(surface, z + dz / 2, alpha + dz / 2 * a2, friction_lambda)
+    a4, t4 = _nongeodesic_derivs(surface, z + dz, alpha + dz * a3, friction_lambda)
+    return (
+        alpha + dz / 6 * (a1 + 2 * a2 + 2 * a3 + a4),
+        theta + dz / 6 * (t1 + 2 * t2 + 2 * t3 + t4),
+    )
+
+
+def _integrate_nongeodesic(
+    surface: VonKarman,
+    alpha_base_deg: float,
+    friction_lambda: float,
+    alpha_step_cap_deg: float = _ALPHA_STEP_CAP_DEG,
+    alpha_max_deg: float = _ALPHA_MAX_DEG,
+) -> tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...]]:
+    """Adaptive RK4-march of ``(alpha, theta)`` from the base to the ``alpha_max`` crossing.
+
+    Returns parallel tuples ``(grid_z, alpha_deg, cum_theta_deg)`` over ``[0, z_cross]``, where
+    ``z_cross`` (the last grid point) is where ``alpha`` reaches ``alpha_max``, pinned by
+    bisection within the final cell so the floored ``z_cap`` is deterministic.
+
+    **Adaptive step (the reason a fixed step fails).** ``dalpha/dz`` blows up in two places:
+    near the base ``r'' ∝ z^{-1/2}`` spikes the friction term, and near the cap the geodesic
+    term ``sin(a)·r'/r`` diverges as ``r → 0`` (and ``1/cos(a)`` as ``a → 90``). A fixed
+    0.05 mm step there advances ``alpha`` by *degrees* per step — an RK4 stage can overshoot
+    90°, sign-flipping ``dalpha/dz`` — so ``z_cross`` came out mm-wrong and step-dependent. Each
+    step is instead capped to advance ``alpha`` by at most ``alpha_step_cap_deg`` (and by
+    ``_THETA_GRID_STEP_MM`` in the flat region), so the step shrinks smoothly where the ODE
+    stiffens and ``z_cross`` converges. The march starts a hair in from the base (``r''``
+    diverges at z=0); the sub-mm seed sits far below the ~1 mm station lattice the builder
+    samples, and ``theta(0)`` is anchored at 0.
+    """
+    alpha_max = math.radians(alpha_max_deg)
+    alpha_step_cap = math.radians(alpha_step_cap_deg)
+    alpha0 = math.radians(alpha_base_deg)
+
+    # Base anchor at z=0, then begin marching a hair in (r'' is singular exactly at the base).
+    grid_z = [0.0, _MARCH_START_MM]
+    alpha_rad = [alpha0, alpha0]
+    theta_rad = [0.0, 0.0]  # theta over [0, z_start] is ~1e-5 rad — negligible, anchored at 0.
+    z, alpha, theta = _MARCH_START_MM, alpha0, 0.0
+
+    while alpha < alpha_max and z < surface.length:
+        d_alpha, _dt = _nongeodesic_derivs(surface, z, alpha, friction_lambda)
+        # Bound the per-step fibre-angle advance; cap at the flat-region step and the tip.
+        step = _THETA_GRID_STEP_MM
+        if abs(d_alpha) > 1e-12:
+            step = min(step, alpha_step_cap / abs(d_alpha))
+        step = min(step, surface.length - z)
+        a_next, t_next = _nongeodesic_rk4_step(surface, z, alpha, theta, step, friction_lambda)
+
+        if a_next >= alpha_max:
+            # Bisect [z, z+step] for the exact alpha == alpha_max crossing (deterministic).
+            lo, hi = 0.0, step
+            for _ in range(80):
+                mid = 0.5 * (lo + hi)
+                a_mid, _tm = _nongeodesic_rk4_step(surface, z, alpha, theta, mid, friction_lambda)
+                if a_mid < alpha_max:
+                    lo = mid
+                else:
+                    hi = mid
+            step = 0.5 * (lo + hi)
+            alpha, theta = _nongeodesic_rk4_step(surface, z, alpha, theta, step, friction_lambda)
+            z += step
+            grid_z.append(z)
+            alpha_rad.append(alpha)
+            theta_rad.append(theta)
+            break
+
+        z += step
+        alpha, theta = a_next, t_next
+        grid_z.append(z)
+        alpha_rad.append(alpha)
+        theta_rad.append(theta)
+
+    return (
+        tuple(grid_z),
+        tuple(math.degrees(a) for a in alpha_rad),
+        tuple(math.degrees(t) for t in theta_rad),
+    )
+
+
 def compute_profile_helical_kinematics(
     layer: HelicalLayer,
     surface: VonKarman,
     tow_parameters: TowParameters,
+    friction_lambda: float = 0.0,
 ) -> ProfileHelicalKinematics:
-    """Geodesic (Clairaut) kinematics for a helical layer on a non-developable profile.
+    """Kinematics for a helical layer on a non-developable profile.
 
-    Anchored at the base (largest radius): ``C = base_radius*sin(alpha)`` is the Clairaut
-    invariant, ``alpha(z) = asin(C/r(z))`` grows toward the tip, and ``theta(z)`` is the
-    numeric Clairaut quadrature (fine cumulative table). The pass turns around at the
-    cap radius ``C + guard`` (not the tip); the bare-cap diameter is reported.
+    ``friction_lambda == 0`` (the default) is the **geodesic** (Phase 1, #326) path: anchored
+    at the base, ``C = base_radius*sin(alpha)`` is the Clairaut invariant, ``alpha(z)`` is the
+    closed-form ``asin(C/r)``, and ``theta(z)`` is the numeric Clairaut quadrature; the pass
+    turns around at the cap radius ``C + guard`` (not the tip). ``friction_lambda > 0`` is the
+    **non-geodesic** (Phase 2, #327) path: ``alpha(z)`` and ``theta(z)`` are forward-integrated
+    so the pass climbs past the geodesic cap toward the tip, stopping at the ``alpha_max``
+    turnaround; the marched ``alpha`` table and the cap slip demand ``|r'(z_cap)|`` are reported.
     """
     r_base = surface.base_radius
     alpha = layer.wind_angle
     clairaut_const = r_base * math.sin(deg_to_rad(alpha))
+
+    if friction_lambda != 0.0:
+        return _compute_nongeodesic_kinematics(
+            layer, surface, tow_parameters, friction_lambda, clairaut_const
+        )
+
     r_stop = clairaut_const + _CAP_GUARD_MM
     if r_base <= r_stop:
         raise ProfileReachabilityError(
@@ -300,20 +453,61 @@ def compute_profile_helical_kinematics(
         pattern_step_degrees=pattern_step_degrees,
         grid_z=grid_z,
         cum_theta_deg=tuple(cum_theta_deg),
+        cap_dwell_slope=abs(surface.radius_slope_at(z_cap)),
     )
 
 
-def profile_geodesic_theta_deg(z: float, kin: ProfileHelicalKinematics) -> float:
-    """Absolute mandrel rotation (deg) at axial ``z``, interpolating the cumulative table.
+def _compute_nongeodesic_kinematics(
+    layer: HelicalLayer,
+    surface: VonKarman,
+    tow_parameters: TowParameters,
+    friction_lambda: float,
+    clairaut_const: float,
+) -> ProfileHelicalKinematics:
+    """Friction-assisted (``lambda > 0``) kinematics — the marched non-geodesic path (#327).
 
-    ``theta(0) = 0``, monotone increasing toward the cap. ``z`` outside ``[0, z_cap]`` is
-    clamped to the table ends (the builder samples within the band).
+    ``clairaut_const`` is retained as the base-anchor reference only (it is NOT an invariant
+    once the path leaves the geodesic). The wound band ends at the marched ``alpha_max``
+    turnaround, floored to the integer station lattice like the geodesic cap.
     """
-    grid, theta = kin.grid_z, kin.cum_theta_deg
+    alpha = layer.wind_angle
+    grid_z, alpha_deg, cum_theta_deg = _integrate_nongeodesic(surface, alpha, friction_lambda)
+
+    z_cap = float(math.floor(grid_z[-1] + 1e-6))
+    if z_cap < 1.0:
+        raise ProfileReachabilityError(
+            f"wind angle {alpha}° with friction lambda={friction_lambda:g} leaves a wound band "
+            f"shorter than one station (z_cap={z_cap}mm); reduce the wind angle."
+        )
+
+    # Coverage is set at the base (largest radius), same rule as the geodesic path — friction
+    # changes the reachable cap, not the base circuit count.
+    circumference0 = 2.0 * math.pi * surface.base_radius
+    tow_arc_length = tow_parameters.width / math.cos(deg_to_rad(alpha))
+    num_circuits = math.ceil(circumference0 / tow_arc_length)
+    pattern_step_degrees = 360.0 * (1 / num_circuits)
+
+    return ProfileHelicalKinematics(
+        surface=surface,
+        clairaut_const=clairaut_const,
+        alpha_ref_deg=alpha,
+        z_cap=z_cap,
+        cap_diameter=2.0 * surface.radius_at(z_cap),
+        num_circuits=num_circuits,
+        pattern_step_degrees=pattern_step_degrees,
+        grid_z=grid_z,
+        cum_theta_deg=cum_theta_deg,
+        alpha_table=alpha_deg,
+        cap_dwell_slope=abs(surface.radius_slope_at(z_cap)),
+    )
+
+
+def _interp_table(z: float, grid: tuple[float, ...], values: tuple[float, ...]) -> float:
+    """Linear interpolation of ``values`` sampled at monotone ``grid``; clamped at both ends."""
     if z <= grid[0]:
-        return theta[0]
+        return values[0]
     if z >= grid[-1]:
-        return theta[-1]
+        return values[-1]
     lo, hi = 0, len(grid) - 1
     while hi - lo > 1:
         mid = (lo + hi) // 2
@@ -322,9 +516,25 @@ def profile_geodesic_theta_deg(z: float, kin: ProfileHelicalKinematics) -> float
         else:
             hi = mid
     frac = (z - grid[lo]) / (grid[hi] - grid[lo])
-    return theta[lo] + frac * (theta[hi] - theta[lo])
+    return values[lo] + frac * (values[hi] - values[lo])
+
+
+def profile_geodesic_theta_deg(z: float, kin: ProfileHelicalKinematics) -> float:
+    """Absolute mandrel rotation (deg) at axial ``z``, interpolating the cumulative table.
+
+    ``theta(0) = 0``, monotone increasing toward the cap. ``z`` outside ``[0, z_cap]`` is
+    clamped to the table ends (the builder samples within the band). Serves both the geodesic
+    quadrature table and the non-geodesic marched table (the field is shared).
+    """
+    return _interp_table(z, kin.grid_z, kin.cum_theta_deg)
 
 
 def profile_local_alpha_deg(z: float, kin: ProfileHelicalKinematics) -> float:
-    """Local fiber angle (deg from the meridian) at axial ``z``: ``asin(C/r(z))``."""
+    """Local fiber angle (deg from the meridian) at axial ``z``.
+
+    Non-geodesic layers (#327) carry a marched ``alpha_table`` and interpolate it; geodesic
+    layers use the closed-form Clairaut angle ``asin(C/r(z))``.
+    """
+    if kin.alpha_table is not None:
+        return _interp_table(z, kin.grid_z, kin.alpha_table)
     return math.degrees(math.asin(min(1.0, kin.clairaut_const / kin.surface.radius_at(z))))
