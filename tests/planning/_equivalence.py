@@ -15,8 +15,16 @@ import math
 from collections.abc import Iterable, Sequence
 
 from fiberpath.config.schemas import HelicalLayer, HoopLayer, MandrelParameters, TowParameters
-from fiberpath.planning.calculations import ConeHelicalKinematics, compute_helical_kinematics
-from fiberpath.planning.developed import build_cone_helical_developed_path, lower_developed_path
+from fiberpath.planning.calculations import (
+    ConeHelicalKinematics,
+    ProfileHelicalKinematics,
+    compute_helical_kinematics,
+)
+from fiberpath.planning.developed import (
+    build_cone_helical_developed_path,
+    build_profile_helical_developed_path,
+    lower_developed_path,
+)
 from fiberpath.planning.helpers import Axis
 from fiberpath.planning.ir import Move, MoveKind
 from fiberpath.planning.layer_strategies import dispatch_layer
@@ -157,7 +165,7 @@ def cone_helical_layer_moves(
     return machine.get_moves()
 
 
-def _cone_laying_segments(moves: Iterable[Move]) -> list[tuple[float, float, float]]:
+def _laying_segments(moves: Iterable[Move]) -> list[tuple[float, float, float]]:
     """(z_mid, dz, d_theta_deg) for each carriage-moving step, honoring G92 resets."""
     last = {Axis.CARRIAGE: 0.0, Axis.MANDREL: 0.0, Axis.DELIVERY_HEAD: 0.0}
     segments: list[tuple[float, float, float]] = []
@@ -195,7 +203,7 @@ def assert_cone_geometry(
     """
     r0, r1, length = kinematics.r0, kinematics.r1, kinematics.length
     cos_phi = math.cos(kinematics.half_angle_rad)
-    segments = _cone_laying_segments(moves)
+    segments = _laying_segments(moves)
     if not segments:
         raise AssertionError("no laying (carriage-moving) segments found")
     anchor = min(segments, key=lambda s: s[0])  # nearest the large end (z=0)
@@ -252,7 +260,110 @@ def assert_cone_circuit_count(moves: Iterable[Move], expected_circuits: int) -> 
     """
     passes = 0
     prev_sign = 0
-    for _z_mid, d_z, _d_theta in _cone_laying_segments(moves):
+    for _z_mid, d_z, _d_theta in _laying_segments(moves):
+        sign = 1 if d_z > 0 else -1
+        if sign != prev_sign:
+            passes += 1
+            prev_sign = sign
+    if passes != 2 * expected_circuits:
+        raise AssertionError(
+            f"emitted {passes} laying passes != 2 * num_circuits ({2 * expected_circuits})"
+        )
+
+
+def profile_helical_layer_moves(
+    spec: PatternSpec,
+    kinematics: ProfileHelicalKinematics,
+    feed: float = 9000.0,
+) -> list[Move]:
+    """Build + lower a single Von Kármán helical layer in isolation; return its IR moves."""
+    machine = WinderMachine(2.0 * kinematics.surface.base_radius)
+    machine.set_feed_rate(feed)
+    lower_developed_path(machine, build_profile_helical_developed_path(spec, kinematics))
+    return machine.get_moves()
+
+
+def _vk_radius_and_meridian(z: float, base_radius: float, length: float) -> tuple[float, float]:
+    """VK radius ``r(z)`` and meridian factor ``sqrt(1 + r'(z)^2)`` — the harness's OWN
+    closed form, deliberately re-derived here rather than imported from ``surface`` so a
+    bug in either the surface or this checker surfaces as a geometry-assert failure
+    instead of cancelling out. Uses ``math.sqrt`` freely (test-only module)."""
+    theta_p = math.acos(max(-1.0, min(1.0, 2.0 * z / length - 1.0)))
+    v = max(0.0, theta_p - math.sin(2.0 * theta_p) / 2.0)
+    r = base_radius / math.sqrt(math.pi) * math.sqrt(v)
+    if v == 0.0:
+        return r, float("inf")
+    r_prime = (
+        -(2.0 * base_radius / (math.sqrt(math.pi) * length)) * math.sin(theta_p) / math.sqrt(v)
+    )
+    return r, math.hypot(1.0, r_prime)
+
+
+def assert_profile_geometry(
+    moves: Iterable[Move],
+    kinematics: ProfileHelicalKinematics,
+    *,
+    clairaut_tol: float = 5e-3,
+    anchor_tol: float = 1.5e-1,
+) -> None:
+    """Every laying segment is a geodesic on the profile: Clairaut ``r·sin(alpha) = C``.
+
+    The achieved angle is recovered from the emitted IR deltas —
+    ``tan(alpha) = r·d_theta / (sqrt(1+r'^2)·d_z)`` — using the harness's own inline
+    ``r(z)`` and meridian factor, then checked against the constant Clairaut invariant
+    (plus the base-anchor angle). This is non-circular: a wrong ``theta(z)`` from the
+    builder (e.g. a table integrated without the meridian factor) breaks the invariant.
+    Tolerances absorb the linear interpolation between ~1 mm samples.
+    """
+    base_radius = kinematics.surface.base_radius
+    length = kinematics.surface.length
+    segments = _laying_segments(moves)
+    if not segments:
+        raise AssertionError("no laying (carriage-moving) segments found")
+    anchor = min(segments, key=lambda s: s[0])  # nearest the base (z=0)
+    for z_mid, d_z, d_theta in segments:
+        r, meridian = _vk_radius_and_meridian(z_mid, base_radius, length)
+        alpha = math.atan(r * math.radians(d_theta) / (meridian * abs(d_z)))
+        clairaut = r * math.sin(alpha)
+        if abs(clairaut - kinematics.clairaut_const) > clairaut_tol:
+            raise AssertionError(
+                f"Clairaut drift at z={z_mid:.3f}: r·sin(alpha)={clairaut:.6f} "
+                f"!= C={kinematics.clairaut_const:.6f}"
+            )
+    z_mid, d_z, d_theta = anchor
+    r, meridian = _vk_radius_and_meridian(z_mid, base_radius, length)
+    anchor_alpha = math.degrees(math.atan(r * math.radians(d_theta) / (meridian * abs(d_z))))
+    if abs(anchor_alpha - kinematics.alpha_ref_deg) > anchor_tol:
+        raise AssertionError(
+            f"base-anchor angle {anchor_alpha:.4f} deg != reference {kinematics.alpha_ref_deg} deg"
+        )
+
+
+def assert_profile_coverage(
+    layer: HelicalLayer, kinematics: ProfileHelicalKinematics, tow: TowParameters
+) -> None:
+    """Coverage anchored at the base (largest parallel) tiles and distributes without aliasing."""
+    if math.gcd(layer.skip_index, layer.pattern_number) != 1:
+        raise AssertionError(
+            f"skip_index {layer.skip_index} / pattern_number {layer.pattern_number} not coprime"
+            " — circuits alias, leaving coverage gaps"
+        )
+    if kinematics.num_circuits % layer.pattern_number != 0:
+        raise AssertionError(
+            f"num_circuits {kinematics.num_circuits} not divisible by pattern_number"
+            f" {layer.pattern_number} — pattern under-tiles"
+        )
+    tow_arc_length = tow.width / math.cos(math.radians(kinematics.alpha_ref_deg))
+    circumference0 = 2.0 * math.pi * kinematics.surface.base_radius
+    if kinematics.num_circuits * tow_arc_length + 1e-9 < circumference0:
+        raise AssertionError("coverage gap at the base: circuits * tow_arc < circumference")
+
+
+def assert_profile_circuit_count(moves: Iterable[Move], expected_circuits: int) -> None:
+    """The lowered program actually lays ``2 * expected_circuits`` passes over the band."""
+    passes = 0
+    prev_sign = 0
+    for _z_mid, d_z, _d_theta in _laying_segments(moves):
         sign = 1 if d_z > 0 else -1
         if sign != prev_sign:
             passes += 1

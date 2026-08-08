@@ -14,12 +14,15 @@ from fiberpath.config.schemas import (
 from .calculations import (
     ConeHelicalKinematics,
     HelicalKinematics,
+    ProfileHelicalKinematics,
+    ProfileReachabilityError,
     compute_cone_helical_kinematics,
     compute_helical_kinematics,
+    compute_profile_helical_kinematics,
 )
 from .exceptions import LayerValidationError
 from .pattern import PatternSpec, pattern_spec
-from .surface import Cone
+from .surface import Cone, VonKarman
 
 MIN_WIND_ANGLE = 1.0
 MAX_WIND_ANGLE = 89.0
@@ -247,4 +250,31 @@ def validate_cone_helical_layer(
     spec = pattern_spec(layer)
     kinematics = compute_cone_helical_kinematics(layer, surface, tow)
     _validate_coverage(layer_index, spec, kinematics.num_circuits, surface.length)
+    return kinematics
+
+
+def validate_profile_helical_layer(
+    layer_index: int,
+    layer: HelicalLayer,
+    surface: VonKarman,
+    tow: TowParameters,
+) -> ProfileHelicalKinematics:
+    """Validate a helical layer wound on a non-developable profile (Von Kármán).
+
+    Numeric bounds, then the profile geodesic kinematics — whose vanishing-band
+    reachability guard (``ProfileReachabilityError``) is re-raised as a
+    ``LayerValidationError`` for a consistent planner-facing error — then the shared
+    coverage conditions over the wound band ``[0, z_cap]``. The bare polar cap is
+    *expected* physics and is reported on the kinematics (``cap_diameter``), not
+    rejected; only a band too short to wind is an error.
+    """
+    validate_layer_numeric_bounds(layer_index, layer)
+
+    try:
+        kinematics = compute_profile_helical_kinematics(layer, surface, tow)
+    except ProfileReachabilityError as exc:
+        raise LayerValidationError(layer_index, str(exc)) from exc
+
+    spec = pattern_spec(layer)
+    _validate_coverage(layer_index, spec, kinematics.num_circuits, kinematics.z_cap)
     return kinematics
