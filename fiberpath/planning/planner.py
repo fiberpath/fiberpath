@@ -5,19 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from fiberpath.config import MachineProfile, WindDefinition, default_machine_profile
-from fiberpath.config.schemas import HelicalLayer, HoopLayer, MandrelParameters
+from fiberpath.config.schemas import HelicalLayer, HoopLayer
 from fiberpath.gcode.dialects import dialect_from_profile
 from fiberpath.gcode.serializer import serialize
 
-from .calculations import ConeHelicalKinematics, HelicalKinematics
+from .calculations import ConeHelicalKinematics, HelicalKinematics, ProfileHelicalKinematics
 from .exceptions import LayerValidationError
 from .helpers import Axis
 from .ir import Move, MoveKind, Program, ProgramMeta
 from .layer_strategies import build_layer_summary, dispatch_layer
 from .machine import WinderMachine
 from .metrics import nominal_metrics
-from .surface import Cone, surface_from_mandrel
-from .validators import validate_cone_helical_layer, validate_layer, validate_layer_sequence
+from .surface import Cone, VonKarman, surface_from_mandrel
+from .validators import (
+    validate_cone_helical_layer,
+    validate_layer,
+    validate_layer_sequence,
+    validate_profile_helical_layer,
+)
 
 
 @dataclass(slots=True)
@@ -68,23 +73,31 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
     for index, layer in enumerate(definition.layers, start=1):
         validate_layer_sequence(index, encountered_terminal)
 
-        current_mandrel = MandrelParameters(
-            diameter=mandrel_diameter,
-            windLength=definition.mandrel_parameters.wind_length,
-            endDiameter=definition.mandrel_parameters.end_diameter,
-        )
+        # Per-layer mandrel copy: model_copy preserves every field (endDiameter,
+        # profile, ...) so a new schema field can never be silently dropped here.
+        current_mandrel = definition.mandrel_parameters.model_copy()
 
         # Validate over the declarative primitive, keyed on the mandrel surface.
-        # Cone helical returns cone kinematics; cylinder helical returns helical
-        # kinematics; hoop/skip return None. Both reused by dispatch.
+        # Cone/profile helical return their own kinematics; cylinder helical returns
+        # helical kinematics; hoop/skip return None. All reused by dispatch.
         surface = surface_from_mandrel(current_mandrel)
         helical_kinematics: HelicalKinematics | None = None
         cone_kinematics: ConeHelicalKinematics | None = None
+        profile_kinematics: ProfileHelicalKinematics | None = None
         if isinstance(surface, Cone):
             if isinstance(layer, HoopLayer):
                 raise LayerValidationError(index, "hoop layers on a cone are not supported yet")
             if isinstance(layer, HelicalLayer):
                 cone_kinematics = validate_cone_helical_layer(
+                    index, layer, surface, definition.tow_parameters
+                )
+        elif isinstance(surface, VonKarman):
+            if isinstance(layer, HoopLayer):
+                raise LayerValidationError(
+                    index, "hoop layers on a profile surface are not supported yet"
+                )
+            if isinstance(layer, HelicalLayer):
+                profile_kinematics = validate_profile_helical_layer(
                     index, layer, surface, definition.tow_parameters
                 )
         else:
@@ -94,6 +107,14 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
 
         summary = build_layer_summary(index, len(definition.layers), layer)
         machine.insert_comment(summary)
+        if profile_kinematics is not None:
+            # Surface the expected bare polar cap to the operator: a geodesic turns
+            # around at the Clairaut radius, so it cannot reach the tip. Full tip
+            # coverage needs non-geodesic winding (Phase 2, #327).
+            machine.insert_comment(
+                f"\tBare polar cap: ~{profile_kinematics.cap_diameter:.2f} mm diameter "
+                "(geodesic turnaround; full tip coverage requires non-geodesic winding)"
+            )
 
         pre_count = len(machine.get_moves())
         dispatch_layer(
@@ -103,6 +124,7 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
             definition.tow_parameters,
             helical_kinematics=helical_kinematics,
             cone_kinematics=cone_kinematics,
+            profile_kinematics=profile_kinematics,
         )
         terminal = bool(getattr(layer, "terminal", False))
         layer_records.append(

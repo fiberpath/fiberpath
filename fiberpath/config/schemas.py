@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, model_validator
 
 
 class BaseFiberPathModel(BaseModel):
@@ -21,6 +21,20 @@ class BaseFiberPathModel(BaseModel):
     )
 
 
+class VonKarmanProfile(BaseFiberPathModel):
+    """Von Kármán (LD-Haack) nose profile (schemaVersion 1.2+).
+
+    A non-developable surface of revolution: radius runs from the mandrel
+    ``diameter`` at the base (z=0) to 0 at the tip (z=``windLength``). The profile
+    carries only its ``type`` discriminator — base radius comes from ``diameter`` and
+    axial length from ``windLength`` (no duplicated dimensions), mirroring how
+    ``endDiameter`` reuses those fields. ``type`` lets other profiles (domes) be added
+    additively later.
+    """
+
+    type: Literal["vonKarman"]
+
+
 class MandrelParameters(BaseFiberPathModel):
     diameter: PositiveFloat
     wind_length: PositiveFloat = Field(alias="windLength")
@@ -29,6 +43,20 @@ class MandrelParameters(BaseFiberPathModel):
     # end `diameter` at z=0); absent reproduces a cylinder. Additive: older files
     # omit it and parse unchanged.
     end_diameter: PositiveFloat | None = Field(default=None, alias="endDiameter")
+    # Optional surface-of-revolution profile (schemaVersion 1.2+). When set, it
+    # fully defines the mandrel surface (base radius = `diameter`/2), so it is
+    # mutually exclusive with `endDiameter`. Absent reproduces a cylinder/cone.
+    profile: VonKarmanProfile | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _reject_profile_with_end_diameter(self) -> MandrelParameters:
+        if self.profile is not None and self.end_diameter is not None:
+            raise ValueError(
+                "mandrelParameters.profile and endDiameter are mutually exclusive: a "
+                "profile fully defines the surface (its base radius is diameter/2). "
+                "Set one or the other, not both."
+            )
+        return self
 
 
 class TowParameters(BaseFiberPathModel):

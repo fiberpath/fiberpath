@@ -21,6 +21,7 @@ export type Windtype2 = "skip";
 export type Layers = (HoopLayer | HelicalLayer | SkipLayer)[];
 export type Diameter = number;
 export type Enddiameter = number | null;
+export type Type = "vonKarman";
 export type Windlength = number;
 /**
  * Version of the .wind file format schema (1.x).
@@ -64,7 +65,22 @@ export interface SkipLayer {
 export interface MandrelParameters {
   diameter: Diameter;
   endDiameter?: Enddiameter;
+  profile?: VonKarmanProfile | null;
   windLength: Windlength;
+  [k: string]: unknown;
+}
+/**
+ * Von Kármán (LD-Haack) nose profile (schemaVersion 1.2+).
+ *
+ * A non-developable surface of revolution: radius runs from the mandrel
+ * ``diameter`` at the base (z=0) to 0 at the tip (z=``windLength``). The profile
+ * carries only its ``type`` discriminator — base radius comes from ``diameter`` and
+ * axial length from ``windLength`` (no duplicated dimensions), mirroring how
+ * ``endDiameter`` reuses those fields. ``type`` lets other profiles (domes) be added
+ * additively later.
+ */
+export interface VonKarmanProfile {
+  type: Type;
   [k: string]: unknown;
 }
 export interface TowParameters {

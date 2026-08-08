@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import math
 from itertools import pairwise
+from pathlib import Path
 
 import pytest
 from _equivalence import (
@@ -18,7 +19,11 @@ from _equivalence import (
     assert_profile_geometry,
     profile_helical_layer_moves,
 )
-from fiberpath.config.schemas import HelicalLayer, TowParameters
+from fiberpath.config import load_wind_definition
+from fiberpath.config.schemas import HelicalLayer, TowParameters, WindDefinition
+from fiberpath.gcode.dialects import MARLIN_XAB_STANDARD
+from fiberpath.gcode.reader import read_program
+from fiberpath.gcode.serializer import serialize
 from fiberpath.planning.calculations import (
     ProfileHelicalKinematics,
     ProfileReachabilityError,
@@ -31,10 +36,12 @@ from fiberpath.planning.calculations import (
 )
 from fiberpath.planning.exceptions import LayerValidationError
 from fiberpath.planning.pattern import helical_spec
-from fiberpath.planning.surface import Cone, VonKarman
+from fiberpath.planning.planner import plan_wind
+from fiberpath.planning.surface import Cone, VonKarman, surface_from_mandrel
 from fiberpath.planning.validators import validate_profile_helical_layer
 
 TOW = TowParameters(width=10.0, thickness=0.3)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _layer(angle: float) -> HelicalLayer:
@@ -318,3 +325,85 @@ def test_geometry_check_rejects_a_theta_table_missing_the_meridian_factor() -> N
     moves = profile_helical_layer_moves(helical_spec(_EXAMPLE_LAYER), bad_kin)
     with pytest.raises(AssertionError, match="Clairaut"):
         assert_profile_geometry(moves, bad_kin)
+
+
+# --- End-to-end: the shipped .wind example through the real loader/planner --- #
+
+
+def test_vk_nosecone_example_is_a_valid_geodesic() -> None:
+    # Loads the shipped example through the .wind loader + surface_from_mandrel (the
+    # user-facing path), then locks it by geodesic invariants + an integer move count.
+    # Equivalence-gated, not byte-goldened (transcendental coords aren't bit-stable).
+    definition = load_wind_definition(_REPO_ROOT / "examples/vk_nosecone/input.wind")
+    surface = surface_from_mandrel(definition.mandrel_parameters)
+    assert isinstance(surface, VonKarman)
+    layer = definition.layers[0]
+    assert isinstance(layer, HelicalLayer)
+    kin = compute_profile_helical_kinematics(layer, surface, definition.tow_parameters)
+    moves = profile_helical_layer_moves(helical_spec(layer), kin)
+    assert_profile_geometry(moves, kin)
+    assert_profile_coverage(layer, kin, definition.tow_parameters)
+    assert_profile_circuit_count(moves, kin.num_circuits)
+    assert len(moves) == 32572
+
+
+def test_vk_example_plans_end_to_end_and_round_trips_through_the_reader() -> None:
+    # Full pipeline: a dispatch bug that silently planned the VK mandrel as a cylinder
+    # would change the geometry — caught here because the emitted program must both be a
+    # non-empty XAB program AND round-trip byte-identically through read_program (the
+    # golden-based round-trip suite never sees VK, which ships no expected.gcode).
+    definition = load_wind_definition(_REPO_ROOT / "examples/vk_nosecone/input.wind")
+    result = plan_wind(definition)
+    assert result.commands, "planned an empty program"
+    assert any("G21" in c for c in result.commands[:6]), "missing modal preamble"
+    assert not any(("Y" in c or "Z" in c) and c.startswith("G") for c in result.commands)
+    # The bare polar cap is surfaced to the operator as a program comment.
+    assert any("cap" in c.lower() for c in result.commands), "bare-cap not reported in G-code"
+
+    program = read_program(result.commands)
+    assert serialize(program, MARLIN_XAB_STANDARD) == result.commands
+
+
+def _profile_wind(layers: list[dict[str, object]]) -> WindDefinition:
+    return WindDefinition.model_validate(
+        {
+            "schemaVersion": "1.2",
+            "mandrelParameters": {
+                "diameter": 98.0,
+                "windLength": 300.0,
+                "profile": {"type": "vonKarman"},
+            },
+            "towParameters": {"width": 7.0, "thickness": 0.5},
+            "defaultFeedRate": 9000.0,
+            "layers": layers,
+        }
+    )
+
+
+def test_hoop_layer_on_a_profile_is_rejected() -> None:
+    # A hoop (~90 deg) is not a geodesic, so it is rejected on a profile surface — the
+    # same policy as hoop-on-cone, wired through the profile dispatch branch.
+    definition = _profile_wind([{"windType": "hoop"}])
+    with pytest.raises(LayerValidationError, match="hoop layers on a profile"):
+        plan_wind(definition)
+
+
+def test_skip_layer_on_a_profile_plans() -> None:
+    # Skip is surface-independent (a mandrel reposition), so it is allowed on a profile.
+    definition = _profile_wind(
+        [
+            {
+                "windType": "helical",
+                "windAngle": 30,
+                "patternNumber": 3,
+                "skipIndex": 1,
+                "lockDegrees": 180,
+                "leadInMM": 5,
+                "leadOutDegrees": 15,
+            },
+            {"windType": "skip", "mandrelRotation": 90},
+        ]
+    )
+    result = plan_wind(definition)
+    assert result.commands
+    assert len(result.layers) == 2

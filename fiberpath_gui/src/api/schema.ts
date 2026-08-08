@@ -441,6 +441,7 @@ export interface components {
             diameter: number;
             /** Enddiameter */
             endDiameter?: number | null;
+            profile?: components["schemas"]["VonKarmanProfile"] | null;
             /** Windlength */
             windLength: number;
         };
@@ -562,6 +563,24 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * VonKarmanProfile
+         * @description Von Kármán (LD-Haack) nose profile (schemaVersion 1.2+).
+         *
+         *     A non-developable surface of revolution: radius runs from the mandrel
+         *     ``diameter`` at the base (z=0) to 0 at the tip (z=``windLength``). The profile
+         *     carries only its ``type`` discriminator — base radius comes from ``diameter`` and
+         *     axial length from ``windLength`` (no duplicated dimensions), mirroring how
+         *     ``endDiameter`` reuses those fields. ``type`` lets other profiles (domes) be added
+         *     additively later.
+         */
+        VonKarmanProfile: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "vonKarman";
         };
         /** WindDefinition */
         WindDefinition: {
