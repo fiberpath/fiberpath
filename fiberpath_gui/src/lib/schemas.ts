@@ -38,6 +38,9 @@ export const BackendHealthResponseSchema = z.object({
 export const MandrelParametersSchema = z.object({
   diameter: z.number().positive(),
   windLength: z.number().positive(),
+  // Optional small-end diameter of a reducing cone/frustum (schemaVersion 1.1+).
+  // Accepted and preserved so cone files round-trip without silent data loss (#344).
+  endDiameter: z.number().positive().nullish(),
 });
 
 /**

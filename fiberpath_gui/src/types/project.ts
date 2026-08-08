@@ -3,6 +3,10 @@
 export interface Mandrel {
   diameter: number; // mm
   wind_length: number; // mm
+  // Small-end diameter of a reducing cone/frustum (schemaVersion 1.1+). Absent
+  // means a plain cylinder. Preserved on load/save so cone files round-trip
+  // without silent data loss (#344).
+  end_diameter?: number | null; // mm
 }
 
 export interface Tow {
