@@ -27,6 +27,28 @@ from .surface import Cone, VonKarman
 MIN_WIND_ANGLE = 1.0
 MAX_WIND_ANGLE = 89.0
 
+#: Default machine+material slip limit μ = max sustainable |k_g/k_n| for a laid tow. A layer
+# whose ``frictionLambda`` exceeds μ would slip and is rejected. PR2 (#327) uses this module
+# default; PR3 sources μ from ``MachineProfile.slipLimit`` (via ``PlanOptions.profile``).
+_DEFAULT_SLIP_LIMIT = 0.2
+
+
+def _reject_nongeodesic_on_developable(
+    layer_index: int, friction_lambda: float, surface_name: str
+) -> None:
+    """A non-zero ``frictionLambda`` only means anything on a non-developable profile.
+
+    On a cylinder or cone the constant-angle path is the developable geodesic (a straight
+    line in the unrolled plane); there is no friction-assisted deviation to compute, so a
+    non-zero ``frictionLambda`` is a mis-specified layer, not a silently-ignored one.
+    """
+    if friction_lambda != 0.0:
+        raise LayerValidationError(
+            layer_index,
+            f"non-geodesic winding (frictionLambda={friction_lambda:g}) requires a Von Kármán "
+            f"profile mandrel; a {surface_name} is wound geodesically (set frictionLambda to 0)",
+        )
+
 
 def _nearest_valid_lock_degrees(
     lock_degrees: float, pattern_step_deg: float, skip_index: int
@@ -74,6 +96,7 @@ def validate_layer(
     layer: LayerModel,
     mandrel: MandrelParameters,
     tow: TowParameters,
+    friction_lambda: float = 0.0,
 ) -> HelicalKinematics | None:
     """Validate any layer over its declarative pattern primitive.
 
@@ -82,10 +105,14 @@ def validate_layer(
     layers that carry a coverage pattern (helical). Hoop and skip have no
     coverage pattern, so they pass through with nothing to constrain. Returns the
     helical kinematics when applicable (for the planner to reuse), else ``None``.
+
+    A non-zero ``friction_lambda`` is rejected here (this is the cylinder surface):
+    non-geodesic winding requires a profile mandrel.
     """
     validate_layer_numeric_bounds(layer_index, layer)
     if isinstance(layer, HelicalLayer):
-        return validate_helical_layer(layer_index, layer, mandrel, tow)
+        return validate_helical_layer(layer_index, layer, mandrel, tow, friction_lambda)
+    _reject_nongeodesic_on_developable(layer_index, friction_lambda, "cylinder")
     return None
 
 
@@ -198,7 +225,9 @@ def validate_helical_layer(
     layer: HelicalLayer,
     mandrel: MandrelParameters,
     tow: TowParameters,
+    friction_lambda: float = 0.0,
 ) -> HelicalKinematics:
+    _reject_nongeodesic_on_developable(layer_index, friction_lambda, "cylinder")
     # Read the coverage pattern from the declarative primitive (PatternSpec), so
     # this is a type-checker over the primitive rather than the raw schema. This
     # is equivalent to the raw layer only while helical_spec is a verbatim
@@ -215,6 +244,7 @@ def validate_cone_helical_layer(
     layer: HelicalLayer,
     surface: Cone,
     tow: TowParameters,
+    friction_lambda: float = 0.0,
 ) -> ConeHelicalKinematics:
     """Validate a helical layer wound on a cone, as a type-check over the primitive.
 
@@ -224,6 +254,7 @@ def validate_cone_helical_layer(
     planner's validation surface for a cone helical layer (see ``plan_wind``).
     """
     validate_layer_numeric_bounds(layer_index, layer)
+    _reject_nongeodesic_on_developable(layer_index, friction_lambda, "cone")
 
     if surface.r1 >= surface.r0:
         raise LayerValidationError(
@@ -258,20 +289,42 @@ def validate_profile_helical_layer(
     layer: HelicalLayer,
     surface: VonKarman,
     tow: TowParameters,
+    friction_lambda: float = 0.0,
+    slip_limit: float = _DEFAULT_SLIP_LIMIT,
 ) -> ProfileHelicalKinematics:
     """Validate a helical layer wound on a non-developable profile (Von Kármán).
 
-    Numeric bounds, then the profile geodesic kinematics — whose vanishing-band
-    reachability guard (``ProfileReachabilityError``) is re-raised as a
-    ``LayerValidationError`` for a consistent planner-facing error — then the shared
-    coverage conditions over the wound band ``[0, z_cap]``. The bare polar cap is
-    *expected* physics and is reported on the kinematics (``cap_diameter``), not
-    rejected; only a band too short to wind is an error.
+    Numeric bounds and the **slip check** first (both scalar, before any integration), then
+    the profile kinematics — geodesic when ``friction_lambda == 0`` (#326), friction-assisted
+    when ``> 0`` (#327). The kinematics' vanishing-band guard (``ProfileReachabilityError``) is
+    re-raised as a ``LayerValidationError``; then the shared coverage conditions over the wound
+    band ``[0, z_cap]``. The bare polar cap is *expected* physics reported on the kinematics
+    (``cap_diameter``), not rejected; only a band too short to wind is an error.
+
+    **Slip check (ordered first, #327):** a layer lays a stable tow only while ``k_g/k_n`` stays
+    within the machine+material limit μ (``slip_limit``); ``frictionLambda`` IS that ratio for
+    the laying path, so ``frictionLambda > μ`` would slip and is rejected before the (more
+    expensive) integration. Negative ``frictionLambda`` is meaningless and rejected too.
     """
     validate_layer_numeric_bounds(layer_index, layer)
 
+    if friction_lambda < 0.0:
+        raise LayerValidationError(
+            layer_index,
+            f"frictionLambda must be >= 0 (got {friction_lambda:g}); it is the slip ratio "
+            "|k_g/k_n|, which has no sign",
+        )
+    if friction_lambda > slip_limit:
+        raise LayerValidationError(
+            layer_index,
+            f"frictionLambda={friction_lambda:g} exceeds the machine slip limit μ={slip_limit:g}: "
+            "the laid tow would slip. Reduce frictionLambda or use a higher-friction setup.",
+        )
+
     try:
-        kinematics = compute_profile_helical_kinematics(layer, surface, tow)
+        kinematics = compute_profile_helical_kinematics(
+            layer, surface, tow, friction_lambda=friction_lambda
+        )
     except ProfileReachabilityError as exc:
         raise LayerValidationError(layer_index, str(exc)) from exc
 

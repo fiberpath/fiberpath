@@ -18,6 +18,7 @@ from .machine import WinderMachine
 from .metrics import nominal_metrics
 from .surface import Cone, VonKarman, surface_from_mandrel
 from .validators import (
+    _DEFAULT_SLIP_LIMIT,
     validate_cone_helical_layer,
     validate_layer,
     validate_layer_sequence,
@@ -53,6 +54,40 @@ class PlanResult:
     layers: list[LayerMetrics]
 
 
+def _profile_cap_comment(
+    kin: ProfileHelicalKinematics, friction_lambda: float, slip_limit: float
+) -> list[str]:
+    """Operator-facing G-code comment lines for a profile helical layer's polar cap.
+
+    Reports the bare cap left at the turnaround and the turnaround *dwell* slip demand
+    ``|r'(z_cap)|`` — the friction the circumferential reversal needs (a second, often-binding
+    constraint separate from the laying slip). When it exceeds μ, the laying reaches the cap but
+    the reversal needs 4th-axis delivery (Phase 3, #328); the comment says so plainly rather than
+    over-claiming coverage.
+    """
+    if friction_lambda > 0.0:
+        head = (
+            f"\tBare polar cap: ~{kin.cap_diameter:.2f} mm diameter "
+            f"(non-geodesic turnaround, frictionLambda={friction_lambda:g})"
+        )
+    else:
+        head = (
+            f"\tBare polar cap: ~{kin.cap_diameter:.2f} mm diameter "
+            "(geodesic turnaround; full tip coverage requires non-geodesic winding)"
+        )
+    lines = [head]
+    if kin.cap_dwell_slope > slip_limit:
+        lines.append(
+            f"\tTurnaround dwell |r'|={kin.cap_dwell_slope:.3f} exceeds slip limit "
+            f"{slip_limit:g}: the reversal at this cap needs 4th-axis delivery (Phase 3, #328)"
+        )
+    else:
+        lines.append(
+            f"\tTurnaround dwell |r'|={kin.cap_dwell_slope:.3f} (within slip limit {slip_limit:g})"
+        )
+    return lines
+
+
 def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) -> PlanResult:
     options = options or PlanOptions()
     dialect = dialect_from_profile(options.profile)
@@ -77,6 +112,12 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
         # profile, ...) so a new schema field can never be silently dropped here.
         current_mandrel = definition.mandrel_parameters.model_copy()
 
+        # Per-layer non-geodesic friction ratio λ and the machine slip limit μ. PR2 (#327)
+        # threads both but sources them from placeholders (λ=0 → geodesic, μ=default); PR3
+        # sources λ from ``layer.frictionLambda`` and μ from ``options.profile.slipLimit``.
+        friction_lambda = 0.0
+        slip_limit = _DEFAULT_SLIP_LIMIT
+
         # Validate over the declarative primitive, keyed on the mandrel surface.
         # Cone/profile helical return their own kinematics; cylinder helical returns
         # helical kinematics; hoop/skip return None. All reused by dispatch.
@@ -89,7 +130,7 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
                 raise LayerValidationError(index, "hoop layers on a cone are not supported yet")
             if isinstance(layer, HelicalLayer):
                 cone_kinematics = validate_cone_helical_layer(
-                    index, layer, surface, definition.tow_parameters
+                    index, layer, surface, definition.tow_parameters, friction_lambda
                 )
         elif isinstance(surface, VonKarman):
             if isinstance(layer, HoopLayer):
@@ -98,23 +139,18 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
                 )
             if isinstance(layer, HelicalLayer):
                 profile_kinematics = validate_profile_helical_layer(
-                    index, layer, surface, definition.tow_parameters
+                    index, layer, surface, definition.tow_parameters, friction_lambda, slip_limit
                 )
         else:
             helical_kinematics = validate_layer(
-                index, layer, current_mandrel, definition.tow_parameters
+                index, layer, current_mandrel, definition.tow_parameters, friction_lambda
             )
 
         summary = build_layer_summary(index, len(definition.layers), layer)
         machine.insert_comment(summary)
         if profile_kinematics is not None:
-            # Surface the expected bare polar cap to the operator: a geodesic turns
-            # around at the Clairaut radius, so it cannot reach the tip. Full tip
-            # coverage needs non-geodesic winding (Phase 2, #327).
-            machine.insert_comment(
-                f"\tBare polar cap: ~{profile_kinematics.cap_diameter:.2f} mm diameter "
-                "(geodesic turnaround; full tip coverage requires non-geodesic winding)"
-            )
+            for line in _profile_cap_comment(profile_kinematics, friction_lambda, slip_limit):
+                machine.insert_comment(line)
 
         pre_count = len(machine.get_moves())
         dispatch_layer(
@@ -125,6 +161,7 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
             helical_kinematics=helical_kinematics,
             cone_kinematics=cone_kinematics,
             profile_kinematics=profile_kinematics,
+            friction_lambda=friction_lambda,
         )
         terminal = bool(getattr(layer, "terminal", False))
         layer_records.append(
