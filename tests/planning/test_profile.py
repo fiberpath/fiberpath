@@ -20,7 +20,12 @@ from _equivalence import (
     profile_helical_layer_moves,
 )
 from fiberpath.config import load_wind_definition
-from fiberpath.config.schemas import HelicalLayer, TowParameters, WindDefinition
+from fiberpath.config.schemas import (
+    HelicalLayer,
+    MandrelParameters,
+    TowParameters,
+    WindDefinition,
+)
 from fiberpath.gcode.dialects import MARLIN_XAB_STANDARD
 from fiberpath.gcode.reader import read_program
 from fiberpath.gcode.serializer import serialize
@@ -37,9 +42,14 @@ from fiberpath.planning.calculations import (
 )
 from fiberpath.planning.exceptions import LayerValidationError
 from fiberpath.planning.pattern import helical_spec
-from fiberpath.planning.planner import plan_wind
+from fiberpath.planning.planner import _profile_cap_comment, plan_wind
 from fiberpath.planning.surface import Cone, VonKarman, surface_from_mandrel
-from fiberpath.planning.validators import validate_profile_helical_layer
+from fiberpath.planning.validators import (
+    validate_cone_helical_layer,
+    validate_helical_layer,
+    validate_layer,
+    validate_profile_helical_layer,
+)
 
 TOW = TowParameters(width=10.0, thickness=0.3)
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -422,6 +432,95 @@ def test_radius_domain_clamps_hold_at_and_beyond_the_ends() -> None:
     # Float drift can push z a hair outside [0, L]; radius_at must not raise.
     assert vk.radius_at(-1e-9) == pytest.approx(49.0, abs=1e-6)
     assert vk.radius_at(300.0 + 1e-9) == pytest.approx(0.0, abs=1e-6)
+
+
+# --- Non-geodesic validation + slip limit + reporting (Phase 2, #327) --- #
+
+_VK = VonKarman(base_radius=49.0, length=300.0)
+
+
+def _cylinder_mandrel() -> MandrelParameters:
+    return MandrelParameters.model_validate({"diameter": 98.0, "windLength": 300.0})
+
+
+def test_friction_over_the_slip_limit_is_rejected() -> None:
+    with pytest.raises(LayerValidationError, match="slip limit"):
+        validate_profile_helical_layer(
+            0, _layer(30.0), _VK, TOW, friction_lambda=0.3, slip_limit=0.2
+        )
+
+
+def test_friction_at_the_slip_limit_boundary_is_accepted() -> None:
+    # Boundary lambda == mu passes and takes the non-geodesic path (marched alpha table).
+    kin = validate_profile_helical_layer(
+        0, _layer(30.0), _VK, TOW, friction_lambda=0.2, slip_limit=0.2
+    )
+    assert kin.alpha_table is not None
+
+
+def test_negative_friction_is_rejected() -> None:
+    with pytest.raises(LayerValidationError, match=">= 0"):
+        validate_profile_helical_layer(0, _layer(30.0), _VK, TOW, friction_lambda=-0.1)
+
+
+def test_slip_check_precedes_the_integration() -> None:
+    # A steep angle that ALSO leaves no wound band, but with lambda > mu: the scalar slip
+    # check must fire first (cheap), so the error is about slip, not reachability.
+    with pytest.raises(LayerValidationError, match="slip limit"):
+        validate_profile_helical_layer(
+            0, _layer(89.0), _VK, TOW, friction_lambda=0.5, slip_limit=0.2
+        )
+
+
+def test_friction_on_a_cylinder_is_rejected() -> None:
+    with pytest.raises(LayerValidationError, match="requires a Von Kármán"):
+        validate_helical_layer(0, _layer(30.0), _cylinder_mandrel(), TOW, friction_lambda=0.1)
+
+
+def test_friction_on_a_cone_is_rejected() -> None:
+    cone = Cone(r0=49.0, r1=27.0, length=200.0)
+    with pytest.raises(LayerValidationError, match="requires a Von Kármán"):
+        validate_cone_helical_layer(0, _layer(30.0), cone, TOW, friction_lambda=0.1)
+
+
+def test_validate_layer_rejects_friction_on_the_cylinder_surface() -> None:
+    with pytest.raises(LayerValidationError, match="requires a Von Kármán"):
+        validate_layer(0, _layer(30.0), _cylinder_mandrel(), TOW, friction_lambda=0.1)
+
+
+def test_geodesic_layer_is_unchanged_when_zero_friction_is_threaded_explicitly() -> None:
+    # The lambda=0 regression lock: threading friction_lambda=0.0 must be a no-op vs the
+    # default call — same kinematics, element-wise identical move list.
+    default_kin = validate_profile_helical_layer(0, _EXAMPLE_LAYER, _EXAMPLE_VK, TOW)
+    zero_kin = validate_profile_helical_layer(
+        0, _EXAMPLE_LAYER, _EXAMPLE_VK, TOW, friction_lambda=0.0
+    )
+    assert zero_kin.alpha_table is None
+    assert zero_kin.z_cap == default_kin.z_cap
+    spec = helical_spec(_EXAMPLE_LAYER)
+    assert profile_helical_layer_moves(spec, zero_kin) == profile_helical_layer_moves(
+        spec, default_kin
+    )
+
+
+def test_cap_comment_reports_dwell_within_slip_limit_for_the_geodesic() -> None:
+    kin = validate_profile_helical_layer(0, _layer(30.0), _VK, TOW)
+    lines = _profile_cap_comment(kin, friction_lambda=0.0, slip_limit=0.2)
+    assert any("Bare polar cap" in ln and "geodesic" in ln for ln in lines)
+    assert any("within slip limit" in ln for ln in lines)
+    assert not any("#328" in ln for ln in lines)  # geodesic dwell is below mu here
+
+
+def test_cap_comment_flags_phase_3_when_the_turnaround_dwell_exceeds_the_slip_limit() -> None:
+    # A friction path deep enough that the turnaround dwell |r'(cap)| exceeds mu: the laying
+    # reaches the cap but the reversal needs 4th-axis delivery (Phase 3, #328).
+    kin = validate_profile_helical_layer(
+        0, _layer(30.0), _VK, TOW, friction_lambda=0.2, slip_limit=0.2
+    )
+    assert kin.cap_dwell_slope > 0.2
+    lines = _profile_cap_comment(kin, friction_lambda=0.2, slip_limit=0.2)
+    assert any("non-geodesic turnaround" in ln and "frictionLambda=0.2" in ln for ln in lines)
+    assert any("Phase 3, #328" in ln and "4th-axis" in ln for ln in lines)
 
 
 # --- Developed path (build + lower) via the equivalence harness --- #

@@ -45,6 +45,7 @@ def dispatch_layer(
     helical_kinematics: HelicalKinematics | None = None,
     cone_kinematics: ConeHelicalKinematics | None = None,
     profile_kinematics: ProfileHelicalKinematics | None = None,
+    friction_lambda: float = 0.0,
 ) -> None:
     """Build the layer's developed-surface path and lower it to Motion IR.
 
@@ -53,6 +54,10 @@ def dispatch_layer(
     mandrel's surface (cylinder or cone) selects the helical builder; skip is
     surface-independent and hoop-on-cone is not supported (the validators reject
     it before dispatch).
+
+    ``friction_lambda`` (non-geodesic winding, #327) is consumed only on the Von Kármán
+    profile path; a non-zero value on any other surface is a mis-specified layer that the
+    validators reject before dispatch, so this (validated-input) boundary silently ignores it.
     """
     spec = pattern_spec(layer)
     surface = surface_from_mandrel(mandrel_parameters)
@@ -69,7 +74,7 @@ def dispatch_layer(
     elif isinstance(surface, VonKarman):
         if isinstance(layer, HelicalLayer):
             profile_kin = profile_kinematics or compute_profile_helical_kinematics(
-                layer, surface, tow_parameters
+                layer, surface, tow_parameters, friction_lambda=friction_lambda
             )
             path = build_profile_helical_developed_path(spec, profile_kin)
         elif isinstance(layer, SkipLayer):
