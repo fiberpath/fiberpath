@@ -18,7 +18,6 @@ from .machine import WinderMachine
 from .metrics import nominal_metrics
 from .surface import Cone, VonKarman, surface_from_mandrel
 from .validators import (
-    _DEFAULT_SLIP_LIMIT,
     validate_cone_helical_layer,
     validate_layer,
     validate_layer_sequence,
@@ -112,11 +111,11 @@ def plan_wind(definition: WindDefinition, options: PlanOptions | None = None) ->
         # profile, ...) so a new schema field can never be silently dropped here.
         current_mandrel = definition.mandrel_parameters.model_copy()
 
-        # Per-layer non-geodesic friction ratio λ and the machine slip limit μ. PR2 (#327)
-        # threads both but sources them from placeholders (λ=0 → geodesic, μ=default); PR3
-        # sources λ from ``layer.frictionLambda`` and μ from ``options.profile.slipLimit``.
-        friction_lambda = 0.0
-        slip_limit = _DEFAULT_SLIP_LIMIT
+        # Per-layer non-geodesic friction ratio λ and the machine slip limit μ (#327). λ is
+        # helical-only: it lives on HelicalLayer, so hoop/skip layers carry no λ (0.0) and can
+        # never request non-geodesic winding. μ is the machine's slip limit from the profile.
+        friction_lambda = layer.friction_lambda if isinstance(layer, HelicalLayer) else 0.0
+        slip_limit = options.profile.slip_limit
 
         # Validate over the declarative primitive, keyed on the mandrel surface.
         # Cone/profile helical return their own kinematics; cylinder helical returns

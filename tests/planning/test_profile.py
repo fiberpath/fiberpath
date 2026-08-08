@@ -20,6 +20,7 @@ from _equivalence import (
     profile_helical_layer_moves,
 )
 from fiberpath.config import load_wind_definition
+from fiberpath.config.machine_profile import MachineProfile
 from fiberpath.config.schemas import (
     HelicalLayer,
     MandrelParameters,
@@ -42,7 +43,7 @@ from fiberpath.planning.calculations import (
 )
 from fiberpath.planning.exceptions import LayerValidationError
 from fiberpath.planning.pattern import helical_spec
-from fiberpath.planning.planner import _profile_cap_comment, plan_wind
+from fiberpath.planning.planner import PlanOptions, _profile_cap_comment, plan_wind
 from fiberpath.planning.surface import Cone, VonKarman, surface_from_mandrel
 from fiberpath.planning.validators import (
     validate_cone_helical_layer,
@@ -618,6 +619,20 @@ def test_vk_example_plans_end_to_end_and_round_trips_through_the_reader() -> Non
     assert serialize(program, MARLIN_XAB_STANDARD) == result.commands
 
 
+def test_vk_friction_example_plans_deeper_than_the_geodesic() -> None:
+    # The shipped non-geodesic example (frictionLambda > 0) must load through the real
+    # loader and wind PAST the geodesic cap — strictly more moves than the geodesic example,
+    # and it reports the non-geodesic turnaround. Equivalence-gated, not byte-goldened.
+    friction = plan_wind(
+        load_wind_definition(_REPO_ROOT / "examples/vk_nosecone_friction/input.wind")
+    )
+    geodesic = plan_wind(load_wind_definition(_REPO_ROOT / "examples/vk_nosecone/input.wind"))
+    assert len(friction.commands) > len(geodesic.commands)
+    assert any("frictionLambda" in c for c in friction.commands)
+    program = read_program(friction.commands)
+    assert serialize(program, MARLIN_XAB_STANDARD) == friction.commands  # round-trips
+
+
 def _profile_wind(layers: list[dict[str, object]]) -> WindDefinition:
     return WindDefinition.model_validate(
         {
@@ -661,3 +676,74 @@ def test_skip_layer_on_a_profile_plans() -> None:
     result = plan_wind(definition)
     assert result.commands
     assert len(result.layers) == 2
+
+
+# --- End-to-end friction through plan_wind (#327 PR3: the .wind field is now live) --- #
+
+
+def _vk_friction_layer(friction_lambda: float) -> dict[str, object]:
+    return {
+        "windType": "helical",
+        "windAngle": 30,
+        "patternNumber": 3,
+        "skipIndex": 1,
+        "lockDegrees": 180,
+        "leadInMM": 5,
+        "leadOutDegrees": 15,
+        "frictionLambda": friction_lambda,
+    }
+
+
+def test_friction_lambda_field_defaults_to_zero_and_rejects_negative() -> None:
+    base = _vk_friction_layer(0.0)
+    del base["frictionLambda"]  # absent -> default 0.0
+    assert HelicalLayer.model_validate(base).friction_lambda == 0.0
+    with pytest.raises(ValueError, match="frictionLambda|greater than or equal"):
+        HelicalLayer.model_validate({**base, "frictionLambda": -0.1})
+
+
+def test_plan_wind_sources_friction_lambda_from_the_layer_and_winds_deeper() -> None:
+    # The PR3 wiring: frictionLambda on the .wind layer drives the non-geodesic path through
+    # the whole planner. The friction pass climbs past the geodesic cap → strictly more moves.
+    geodesic = plan_wind(_profile_wind([_vk_friction_layer(0.0)]))
+    friction = plan_wind(_profile_wind([_vk_friction_layer(0.1)]))
+    assert len(friction.commands) > len(geodesic.commands)
+    assert any("frictionLambda=0.1" in c for c in friction.commands)
+
+
+def test_plan_wind_rejects_friction_over_the_default_slip_limit() -> None:
+    # mu = the default profile's slipLimit (0.2). A layer above it is rejected end-to-end.
+    with pytest.raises(LayerValidationError, match="exceeds the machine slip limit"):
+        plan_wind(_profile_wind([_vk_friction_layer(0.5)]))
+
+
+def test_plan_wind_respects_a_custom_profile_slip_limit() -> None:
+    # mu comes from options.profile.slipLimit: a stricter profile rejects a lambda the default
+    # would accept; a looser profile accepts a lambda the default would reject.
+    definition = _profile_wind([_vk_friction_layer(0.15)])
+    strict = MachineProfile.model_validate(
+        {"id": "x", "name": "x", "controller": "marlin", "requiredGcodes": ["G0"], "slipLimit": 0.1}
+    )
+    with pytest.raises(LayerValidationError, match="exceeds the machine slip limit"):
+        plan_wind(definition, PlanOptions(profile=strict))
+    loose = MachineProfile.model_validate(
+        {"id": "x", "name": "x", "controller": "marlin", "requiredGcodes": ["G0"], "slipLimit": 0.5}
+    )
+    assert plan_wind(definition, PlanOptions(profile=loose)).commands
+
+
+def test_plan_wind_rejects_friction_on_a_cylinder_layer_end_to_end() -> None:
+    # frictionLambda on a helical layer over a plain cylinder mandrel is rejected through
+    # plan_wind (non-geodesic winding requires a profile) — the helical-only field means a
+    # skip/hoop layer can never carry it in the first place.
+    definition = WindDefinition.model_validate(
+        {
+            "schemaVersion": "1.3",
+            "mandrelParameters": {"diameter": 98.0, "windLength": 300.0},
+            "towParameters": {"width": 7.0, "thickness": 0.5},
+            "defaultFeedRate": 9000.0,
+            "layers": [_vk_friction_layer(0.1)],
+        }
+    )
+    with pytest.raises(LayerValidationError, match="requires a Von Kármán"):
+        plan_wind(definition)

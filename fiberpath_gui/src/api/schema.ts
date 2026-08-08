@@ -362,6 +362,11 @@ export interface components {
         };
         /** HelicalLayer */
         HelicalLayer: {
+            /**
+             * Frictionlambda
+             * @default 0
+             */
+            frictionLambda: number;
             /** Leadinmm */
             leadInMM: number;
             /** Leadoutdegrees */

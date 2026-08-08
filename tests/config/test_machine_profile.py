@@ -19,16 +19,39 @@ from pydantic import ValidationError
 def test_default_profile_is_marlin_xab() -> None:
     profile = default_machine_profile()
     assert profile.id == "marlin-xab"
-    assert profile.profile_version == "1.0"
+    assert profile.profile_version == "1.1"  # 1.1 adds slipLimit (#327)
     assert profile.controller == "marlin"
     assert profile.units == "mm"
     assert profile.feed_mode == "G94"
+    assert profile.slip_limit == 0.2
     assert profile.required_gcodes == ("G0", "G21", "G90", "G92", "G94")
     assert (
         profile.axis_mapping.carriage,
         profile.axis_mapping.mandrel,
         profile.axis_mapping.delivery_head,
     ) == ("X", "A", "B")
+
+
+def test_profile_slip_limit_defaults_and_bounds() -> None:
+    # Additive: a profile that omits slipLimit gets the default; a non-positive value is
+    # rejected (μ = 0 or negative would reject every useful frictionLambda).
+    from fiberpath.config.machine_profile import MachineProfile
+
+    minimal = {
+        "id": "x",
+        "name": "x",
+        "controller": "marlin",
+        "requiredGcodes": ["G0"],
+    }
+    assert MachineProfile.model_validate(minimal).slip_limit == 0.2
+    assert MachineProfile.model_validate({**minimal, "slipLimit": 0.35}).slip_limit == 0.35
+    at_cap = MachineProfile.model_validate({**minimal, "slipLimit": 0.5})  # upper boundary
+    assert at_cap.slip_limit == 0.5
+    with pytest.raises(ValidationError, match="slipLimit|greater than 0"):
+        MachineProfile.model_validate({**minimal, "slipLimit": 0.0})
+    # Bounded above at the numerically-validated 0.5 (μ > 0.5 pushes λ into an unstable cap).
+    with pytest.raises(ValidationError, match="slipLimit|less than or equal to 0.5"):
+        MachineProfile.model_validate({**minimal, "slipLimit": 0.6})
 
 
 def test_default_profile_reproduces_legacy_dialect() -> None:

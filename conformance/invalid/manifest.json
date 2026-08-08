@@ -10,6 +10,8 @@
     { "file": "unreachable_cone_angle.wind", "match": "too steep" },
     { "file": "hoop_on_cone.wind", "match": "hoop layers on a cone" },
     { "file": "vk_profile_and_end_diameter.wind", "match": "mutually exclusive" },
-    { "file": "vk_unreachable_angle.wind", "match": "no usable" }
+    { "file": "vk_unreachable_angle.wind", "match": "no usable" },
+    { "file": "vk_friction_exceeds_slip_limit.wind", "match": "exceeds the machine slip limit" },
+    { "file": "negative_friction_lambda.wind", "match": "frictionLambda" }
   ]
 }

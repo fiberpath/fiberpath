@@ -78,6 +78,12 @@ class HelicalLayer(BaseFiberPathModel):
     lead_in_mm: PositiveFloat = Field(alias="leadInMM")
     lead_out_degrees: PositiveFloat = Field(alias="leadOutDegrees")
     skip_initial_near_lock: bool = Field(default=False, alias="skipInitialNearLock")
+    # Non-geodesic friction ratio λ = k_g/k_n for the laid tow (schemaVersion 1.3+). 0 (the
+    # default) is the geodesic path; > 0 lets the pass climb past the geodesic turnaround
+    # toward a Von Kármán tip, up to the machine slip limit μ (MachineProfile.slipLimit).
+    # Additive: older files omit it and parse unchanged. Only meaningful on a profile mandrel
+    # (the planner rejects a non-zero value on a cylinder/cone). Not PositiveFloat: 0 is valid.
+    friction_lambda: float = Field(default=0.0, alias="frictionLambda", ge=0.0)
 
 
 class SkipLayer(BaseFiberPathModel):

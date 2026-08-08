@@ -2,6 +2,12 @@
   "$defs": {
     "HelicalLayer": {
       "properties": {
+        "frictionLambda": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Frictionlambda",
+          "type": "number"
+        },
         "leadInMM": {
           "exclusiveMinimum": 0,
           "title": "Leadinmm",

@@ -8,7 +8,7 @@ for any tool that produces or consumes winding programs, not only FiberPath.
 | | |
 |---|---|
 | **Status** | Normative, stable within major version 1 |
-| **Current version** | `1.2` (the `schemaVersion` field; see [changelog](#format-changelog)) |
+| **Current version** | `1.3` (the `schemaVersion` field; see [changelog](#format-changelog)) |
 | **Media type** | `application/vnd.fiberpath.wind+json` (conventional; not IANA-registered) |
 | **Canonical JSON Schema `$id`** | `https://fiberpath.org/schemas/wind/1/wind.schema.json` (major-versioned) |
 | **Customary extension** | `.wind` |
@@ -47,7 +47,7 @@ A **conforming consumer** (reader):
 
 ## Schema version and compatibility policy
 
-Current schema version: **1.1**.
+Current schema version: **1.3**.
 
 The format evolves **additively within a major version**: a minor revision MAY add
 optional fields or layer/surface types, MUST NOT remove or repurpose existing ones, and
@@ -217,6 +217,7 @@ A helical layer winds at a specified angle, creating a spiral pattern around the
 
 **Optional Fields**:
 
+- `frictionLambda` (default: `0`, schemaVersion 1.3+): Non-geodesic friction ratio λ = k_g/k_n for the laid tow. `0` winds the geodesic (leaving the expected bare polar cap); `> 0` lets the pass deviate from the geodesic and climb **past** the turnaround toward a Von Kármán tip, laying deeper (a smaller bare cap) as λ rises. It must not exceed the machine slip limit μ (`slipLimit` in the [machine profile](machine-profile.md), default `0.2`) — a higher value would slip and is rejected. Only meaningful on a Von Kármán `profile` mandrel; a non-zero value on a cylinder or cone is rejected. **Calibrate empirically**: μ depends on fibre, resin, tension, and speed, so start conservative and raise λ toward the μ your setup actually holds. Note the *turnaround* dwell is a separate limit — when it exceeds μ the laying reaches the cap but the reversal needs 4th-axis delivery (reported by the planner).
 - `skipInitialNearLock` (default: `false`): Whether to suppress the initial near-lock mandrel pre-rotation at the start of this layer.
 
   Before the first circuit of a helical layer, the planner normally performs an *initial near-lock* move: it rotates the mandrel by `lockDegrees` and re-zeros the rotational position there. This ensures the first circuit starts from the same rotational reference point that all subsequent circuits establish at their turn-around. Without it, the first circuit would begin from whatever position the mandrel is currently at, causing the first and remaining circuits to be rotationally inconsistent.
@@ -364,6 +365,7 @@ absent `schemaVersion` treated as `1.0`. The changelog below records each minor.
 Additive-only within major version 1; tolerant readers ignore unknown fields, and
 a missing `schemaVersion` is treated as `1.0`.
 
+- **1.3** — added optional `frictionLambda` on helical layers for **non-geodesic (friction-assisted) winding** on a Von Kármán profile: `0` (the default) is the geodesic path, `> 0` lets the pass climb past the geodesic turnaround toward the tip, up to the machine slip limit μ (`slipLimit` in the [machine profile](machine-profile.md); default `0.2`). The planner rejects `frictionLambda > μ` ("would slip") and a non-zero value on a cylinder/cone (non-geodesic winding requires a profile). Files omitting `frictionLambda` are unchanged. The turnaround *dwell* is reported and, when it exceeds μ, flagged as needing 4th-axis delivery (a future capability).
 - **1.2** — added optional `mandrelParameters.profile` (a discriminated `{ "type": "vonKarman" }`) for **non-developable surfaces of revolution**, starting with the Von Kármán (LD-Haack) nose. Helical layers follow a **numeric geodesic** and leave an expected bare polar cap near the tip (reported by the planner). Mutually exclusive with `endDiameter`. Files omitting `profile` are unchanged 1.0/1.1.
 - **1.1** — added optional `mandrelParameters.endDiameter` for reducing **cones (frustums)**; helical layers on a cone are wound as geodesics. Files omitting `endDiameter` are unchanged 1.0 cylinders.
 - **1.0** — initial schema: discriminated layer types (hoop / helical / skip) on a cylinder.

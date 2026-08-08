@@ -25,20 +25,22 @@ A profile is a JSON document validated against the `MachineProfile` model
 | `feedMode` | `G94` | Feed-rate mode (units per minute). |
 | `axisMapping` | object | `carriage` / `mandrel` / `deliveryHead` → G-code axis letters (each a distinct single uppercase letter). |
 | `requiredGcodes` | string[] | Opcodes the planner emits (each a `G`/`M` code); a compatible controller must support all. |
+| `slipLimit` | number `0 < μ ≤ 0.5` | Friction slip limit μ = max sustainable \|k_g/k_n\| a laid tow holds before slipping (profileVersion 1.1+). Absent → `0.2`. Bounds a helical layer's non-geodesic `frictionLambda` (the planner rejects `frictionLambda > slipLimit`). A **per-setup contact limit** — recalibrate per material, tension, and speed; the default `0.2` is a realistic dry-ish value with headroom. Capped at `0.5` (the numerically-validated range, which already reaches within ~1 mm of the tip). |
 
 The bundled canonical profile is `marlin-xab`
 (`fiberpath/profiles/marlin_xab.json`):
 
 ```json
 {
-  "profileVersion": "1.0",
+  "profileVersion": "1.1",
   "id": "marlin-xab",
   "name": "Marlin (X/A/B standard)",
   "controller": "marlin",
   "units": "mm",
   "feedMode": "G94",
   "axisMapping": { "carriage": "X", "mandrel": "A", "deliveryHead": "B" },
-  "requiredGcodes": ["G0", "G21", "G90", "G92", "G94"]
+  "requiredGcodes": ["G0", "G21", "G90", "G92", "G94"],
+  "slipLimit": 0.2
 }
 ```
 

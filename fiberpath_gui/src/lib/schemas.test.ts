@@ -57,6 +57,25 @@ describe("schemas", () => {
         expect(result.success).toBe(true);
       });
 
+      it("should accept an optional non-negative frictionLambda and reject a negative one", () => {
+        const base = {
+          windType: "helical" as const,
+          windAngle: 45,
+          patternNumber: 3,
+          skipIndex: 2,
+          lockDegrees: 5,
+          leadInMM: 10,
+          leadOutDegrees: 5,
+        };
+        expect(WindHelicalLayerSchema.safeParse(base).success).toBe(true); // absent -> ok
+        expect(
+          WindHelicalLayerSchema.safeParse({ ...base, frictionLambda: 0.15 }).success,
+        ).toBe(true);
+        expect(
+          WindHelicalLayerSchema.safeParse({ ...base, frictionLambda: -0.1 }).success,
+        ).toBe(false);
+      });
+
       it("should reject windAngle > 90", () => {
         const data = {
           windType: "helical" as const,
