@@ -92,6 +92,17 @@
           "default": null,
           "title": "Enddiameter"
         },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VonKarmanProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "windLength": {
           "exclusiveMinimum": 0,
           "title": "Windlength",
@@ -142,6 +153,21 @@
         "thickness"
       ],
       "title": "TowParameters",
+      "type": "object"
+    },
+    "VonKarmanProfile": {
+      "description": "Von K\u00e1rm\u00e1n (LD-Haack) nose profile (schemaVersion 1.2+).\n\nA non-developable surface of revolution: radius runs from the mandrel\n``diameter`` at the base (z=0) to 0 at the tip (z=``windLength``). The profile\ncarries only its ``type`` discriminator \u2014 base radius comes from ``diameter`` and\naxial length from ``windLength`` (no duplicated dimensions), mirroring how\n``endDiameter`` reuses those fields. ``type`` lets other profiles (domes) be added\nadditively later.",
+      "properties": {
+        "type": {
+          "const": "vonKarman",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "VonKarmanProfile",
       "type": "object"
     }
   },

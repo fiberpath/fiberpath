@@ -14,19 +14,22 @@ from fiberpath.config.schemas import (
 from .calculations import (
     ConeHelicalKinematics,
     HelicalKinematics,
+    ProfileHelicalKinematics,
     compute_cone_helical_kinematics,
     compute_helical_kinematics,
+    compute_profile_helical_kinematics,
 )
 from .developed import (
     build_cone_helical_developed_path,
     build_helical_developed_path,
     build_hoop_developed_path,
+    build_profile_helical_developed_path,
     build_skip_developed_path,
     lower_developed_path,
 )
 from .machine import WinderMachine
 from .pattern import pattern_spec
-from .surface import Cone, surface_from_mandrel
+from .surface import Cone, VonKarman, surface_from_mandrel
 
 
 def build_layer_summary(index: int, total: int, layer: LayerModel) -> str:
@@ -41,6 +44,7 @@ def dispatch_layer(
     *,
     helical_kinematics: HelicalKinematics | None = None,
     cone_kinematics: ConeHelicalKinematics | None = None,
+    profile_kinematics: ProfileHelicalKinematics | None = None,
 ) -> None:
     """Build the layer's developed-surface path and lower it to Motion IR.
 
@@ -62,6 +66,16 @@ def dispatch_layer(
             path = build_skip_developed_path(spec)
         else:
             raise TypeError(f"hoop layers on a cone are not supported: {layer}")
+    elif isinstance(surface, VonKarman):
+        if isinstance(layer, HelicalLayer):
+            profile_kin = profile_kinematics or compute_profile_helical_kinematics(
+                layer, surface, tow_parameters
+            )
+            path = build_profile_helical_developed_path(spec, profile_kin)
+        elif isinstance(layer, SkipLayer):
+            path = build_skip_developed_path(spec)
+        else:
+            raise TypeError(f"hoop layers on a profile surface are not supported: {layer}")
     elif isinstance(layer, HoopLayer):
         path = build_hoop_developed_path(spec, mandrel_parameters, tow_parameters)
     elif isinstance(layer, HelicalLayer):

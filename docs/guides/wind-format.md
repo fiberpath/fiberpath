@@ -8,7 +8,7 @@ for any tool that produces or consumes winding programs, not only FiberPath.
 | | |
 |---|---|
 | **Status** | Normative, stable within major version 1 |
-| **Current version** | `1.1` (the `schemaVersion` field; see [changelog](#format-changelog)) |
+| **Current version** | `1.2` (the `schemaVersion` field; see [changelog](#format-changelog)) |
 | **Media type** | `application/vnd.fiberpath.wind+json` (conventional; not IANA-registered) |
 | **Canonical JSON Schema `$id`** | `https://fiberpath.org/schemas/wind/1/wind.schema.json` (major-versioned) |
 | **Customary extension** | `.wind` |
@@ -88,6 +88,7 @@ A `.wind` file is a JSON document with the following top-level structure:
 - `diameter` (required): Mandrel outer diameter in mm (must be > 0). For a cone, this is the **large end** at `z = 0`.
 - `windLength` (required): Length of the winding area in mm (must be > 0)
 - `endDiameter` (optional, **1.1+**): Outer diameter in mm at the far end (`z = windLength`). When set **below** `diameter`, the mandrel is a reducing **cone (frustum)**; omit it (or set it equal to `diameter`) for a cylinder.
+- `profile` (optional, **1.2+**): a discriminated object selecting a **non-developable surface of revolution** — currently `{ "type": "vonKarman" }` (a Von Kármán / LD-Haack nose). The base radius is `diameter`/2 and the axial length is `windLength` (the profile carries no duplicated dimensions). **Mutually exclusive with `endDiameter`** (a profile fully defines the surface).
 
 **Example (cylinder)**:
 
@@ -119,6 +120,25 @@ fiber angle increases toward the small end. Current limits:
 - **Reducing frustum only** — `endDiameter` must be `< diameter` (mount the large end at `z = 0`).
 - **Helical (and skip) layers only** — a hoop layer on a cone is rejected (a 90° hoop is not a geodesic).
 - **Reachability** — a wind angle too steep for the taper is rejected: the geodesic must be able to reach the small end (`diameter · sin α ≤ endDiameter`).
+
+#### Profiles (non-developable surfaces)
+
+A `profile` selects a **non-developable** surface of revolution (nonzero Gaussian
+curvature — it does **not** unroll flat), so a helical path is no longer a straight
+line. The engine integrates the geodesic (Clairaut) relation numerically over the
+curved meridian. Currently one profile is defined:
+
+- **`vonKarman`** — the Von Kármán (LD-Haack) nose. Radius runs from `diameter`/2 at
+  the base (`z = 0`) to 0 at the tip (`z = windLength`). A geodesic turns around at the
+  Clairaut radius `C = (diameter/2) · sin α`, so it **cannot reach the tip**: a helical
+  layer leaves an **expected bare polar cap** of diameter ≈ `2C`, which the planner
+  reports as a G-code comment. Full tip coverage requires non-geodesic winding (a later
+  version). Helical (and skip) layers only; a hoop on a profile is rejected.
+
+> **Known approximation (cones and profiles).** Nominal time/tow metrics use the
+> constant base `diameter` for the mandrel arc length, so on a curved surface the tow
+> length is an approximation that does not reflect the z-varying radius. Toolpath
+> geometry (the emitted coordinates) is exact; only the summary metrics approximate.
 
 ### `towParameters` (required)
 
@@ -344,6 +364,7 @@ absent `schemaVersion` treated as `1.0`. The changelog below records each minor.
 Additive-only within major version 1; tolerant readers ignore unknown fields, and
 a missing `schemaVersion` is treated as `1.0`.
 
+- **1.2** — added optional `mandrelParameters.profile` (a discriminated `{ "type": "vonKarman" }`) for **non-developable surfaces of revolution**, starting with the Von Kármán (LD-Haack) nose. Helical layers follow a **numeric geodesic** and leave an expected bare polar cap near the tip (reported by the planner). Mutually exclusive with `endDiameter`. Files omitting `profile` are unchanged 1.0/1.1.
 - **1.1** — added optional `mandrelParameters.endDiameter` for reducing **cones (frustums)**; helical layers on a cone are wound as geodesics. Files omitting `endDiameter` are unchanged 1.0 cylinders.
 - **1.0** — initial schema: discriminated layer types (hoop / helical / skip) on a cylinder.
 

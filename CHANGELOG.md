@@ -8,6 +8,21 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+### Added
+
+- **Von Kármán nosecone — non-developable surfaces** (#326): a reducing/curved
+  surface of revolution can be wound by adding an optional
+  `mandrelParameters.profile` (`{ "type": "vonKarman" }`, `schemaVersion 1.2`). It is
+  the first **non-developable** surface: helical layers follow a **numeric geodesic**
+  (the Clairaut relation integrated over the curved meridian) instead of the cone's
+  closed form. Because a geodesic turns around at its Clairaut radius, the layer leaves
+  an **expected bare polar cap** near the tip, reported by the planner; full tip
+  coverage requires non-geodesic winding (a later phase). `profile` is mutually
+  exclusive with `endDiameter`. Cylinder/cone output is unchanged; the `vk_nosecone`
+  example is validated by the equivalence harness (no byte golden — transcendental
+  coordinates are not bit-stable across platforms). The desktop app preserves an
+  unmodelled `profile`/`endDiameter` rather than silently dropping it (#344).
+
 ## [0.10.0] - 2026-06-29
 
 ### Added

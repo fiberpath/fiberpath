@@ -8,6 +8,8 @@
     { "file": "lead_in_exceeds_length.wind", "match": "must be less than the mandrel windLength" },
     { "file": "expanding_cone.wind", "match": "reducing frustum" },
     { "file": "unreachable_cone_angle.wind", "match": "too steep" },
-    { "file": "hoop_on_cone.wind", "match": "hoop layers on a cone" }
+    { "file": "hoop_on_cone.wind", "match": "hoop layers on a cone" },
+    { "file": "vk_profile_and_end_diameter.wind", "match": "mutually exclusive" },
+    { "file": "vk_unreachable_angle.wind", "match": "no usable" }
   ]
 }

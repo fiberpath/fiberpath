@@ -152,6 +152,8 @@ def surface_from_mandrel(mandrel: MandrelParameters) -> Surface:
     falls through to the cone branch so the layer validators reject it (expanding
     frusta are not supported yet) with a clear message.
     """
+    if mandrel.profile is not None and mandrel.profile.type == "vonKarman":
+        return VonKarman(base_radius=mandrel.diameter / 2.0, length=mandrel.wind_length)
     if mandrel.end_diameter is not None and mandrel.end_diameter != mandrel.diameter:
         return Cone(
             r0=mandrel.diameter / 2.0,
