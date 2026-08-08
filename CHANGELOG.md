@@ -10,6 +10,16 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ### Added
 
+- **Non-geodesic (friction-assisted) Von Kármán winding** (#327): helical layers on a
+  Von Kármán profile gain an optional `frictionLambda` (λ = k_g/k_n, default `0`,
+  `schemaVersion 1.3`). `λ > 0` lets a pass deviate from the geodesic and climb **past**
+  the turnaround toward the tip, laying a progressively smaller bare cap as λ rises,
+  bounded by a new machine slip limit μ — `slipLimit` on the machine profile
+  (`profileVersion 1.1`, default `0.2`). The planner rejects `frictionLambda > μ` ("would
+  slip") and a non-zero value on a cylinder/cone, and reports the turnaround **dwell**
+  demand (flagging when the reversal needs future 4th-axis delivery). The angle path is
+  solved by an adaptive ODE integrator (converged, platform-stable cap); `λ = 0` is
+  byte-identical to the geodesic path. Files omitting `frictionLambda` are unchanged.
 - **Von Kármán nosecone — non-developable surfaces** (#326): a reducing/curved
   surface of revolution can be wound by adding an optional
   `mandrelParameters.profile` (`{ "type": "vonKarman" }`, `schemaVersion 1.2`). It is

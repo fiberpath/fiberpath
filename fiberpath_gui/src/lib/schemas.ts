@@ -74,6 +74,9 @@ export const WindHelicalLayerSchema = z.object({
   leadInMM: z.number().positive(),
   leadOutDegrees: z.number().positive(),
   skipInitialNearLock: z.boolean().optional(),
+  // Non-geodesic friction ratio (schemaVersion 1.3+); 0/absent is the geodesic default.
+  // min(0) mirrors the engine's ge=0 bound so the save gate can't pass a value it rejects.
+  frictionLambda: z.number().min(0).optional(),
 });
 
 /**

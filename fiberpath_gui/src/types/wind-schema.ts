@@ -8,6 +8,7 @@
 export type Defaultfeedrate = number;
 export type Terminal = boolean;
 export type Windtype = "hoop";
+export type Frictionlambda = number;
 export type Leadinmm = number;
 export type Leadoutdegrees = number;
 export type Lockdegrees = number;
@@ -47,6 +48,7 @@ export interface HoopLayer {
   [k: string]: unknown;
 }
 export interface HelicalLayer {
+  frictionLambda?: Frictionlambda;
   leadInMM: Leadinmm;
   leadOutDegrees: Leadoutdegrees;
   lockDegrees: Lockdegrees;

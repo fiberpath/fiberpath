@@ -107,6 +107,21 @@ class MachineProfile(BaseFiberPathModel):
         min_length=1,
         description="G-code opcodes the planner emits; a compatible controller must support all.",
     )
+    # The slip limit μ (profileVersion 1.1+): the max sustainable |k_g/k_n| before a laid tow
+    # slips on this machine+material setup. It bounds a layer's non-geodesic frictionLambda (the
+    # planner rejects frictionLambda > slipLimit). A per-setup CONTACT limit — recalibrate per
+    # material/tension; the default 0.2 is a realistic dry-ish value that leaves headroom.
+    # Additive: profiles that omit it get the default. See docs/guides/machine-profile.md.
+    # Upper bound 0.5: the non-geodesic integrator is validated (converged, platform-stable) over
+    # λ ∈ [0, 0.5], which already reaches within ~1 mm of the tip; μ > 0.5 pushes λ into a regime
+    # where the cap is not yet numerically stable. Physically 0.5 is already a high dry limit.
+    slip_limit: float = Field(
+        default=0.2,
+        alias="slipLimit",
+        gt=0.0,
+        le=0.5,
+        description="Friction slip limit μ = max |k_g/k_n| a tow holds; bounds frictionLambda.",
+    )
 
 
 def _validate(payload: object, source: str) -> MachineProfile:

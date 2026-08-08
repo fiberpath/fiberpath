@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.3",
+  "layers": [
+    {
+      "windType": "helical",
+      "windAngle": 30,
+      "patternNumber": 3,
+      "skipIndex": 1,
+      "lockDegrees": 180,
+      "leadInMM": 5,
+      "leadOutDegrees": 15,
+      "frictionLambda": 0.15
+    }
+  ],
+  "mandrelParameters": {
+    "diameter": 98.0,
+    "windLength": 300.0,
+    "profile": { "type": "vonKarman" }
+  },
+  "towParameters": {
+    "width": 7.0,
+    "thickness": 0.5
+  },
+  "defaultFeedRate": 9000.0
+}

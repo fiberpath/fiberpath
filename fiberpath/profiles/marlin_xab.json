@@ -1,5 +1,5 @@
 {
-  "profileVersion": "1.0",
+  "profileVersion": "1.1",
   "id": "marlin-xab",
   "name": "Marlin (X/A/B standard)",
   "controller": "marlin",
@@ -10,5 +10,6 @@
     "mandrel": "A",
     "deliveryHead": "B"
   },
-  "requiredGcodes": ["G0", "G21", "G90", "G92", "G94"]
+  "requiredGcodes": ["G0", "G21", "G90", "G92", "G94"],
+  "slipLimit": 0.2
 }
