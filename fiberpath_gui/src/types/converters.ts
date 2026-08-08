@@ -55,7 +55,7 @@ export function convertLayerToWindSchema(
  */
 export function projectToWindDefinition(
   project: {
-    mandrel: { diameter: number; wind_length: number };
+    mandrel: { diameter: number; wind_length: number; end_diameter?: number | null };
     tow: { width: number; thickness: number };
     layers: Layer[];
     defaultFeedRate: number;
@@ -66,11 +66,15 @@ export function projectToWindDefinition(
     ? project.layers.slice(0, visibleLayerCount)
     : project.layers;
 
+  const endDiameter = project.mandrel.end_diameter;
   return {
-    schemaVersion: "1.0",
+    // A cone (endDiameter present) requires schemaVersion 1.1; a plain cylinder
+    // stays 1.0. Emitting endDiameter under 1.0 would be an invalid combination.
+    schemaVersion: endDiameter != null ? "1.1" : "1.0",
     mandrelParameters: {
       diameter: project.mandrel.diameter,
       windLength: project.mandrel.wind_length,
+      ...(endDiameter != null ? { endDiameter } : {}),
     },
     towParameters: {
       width: project.tow.width,
@@ -133,6 +137,11 @@ export function windDefinitionToDocument(windDef: WindDefinition): ProjectDocume
     mandrel: {
       diameter: windDef.mandrelParameters.diameter,
       wind_length: windDef.mandrelParameters.windLength,
+      // Preserve the cone small-end when present; omit for a plain cylinder so
+      // cylinder documents stay identical (no spurious null field).
+      ...(windDef.mandrelParameters.endDiameter != null
+        ? { end_diameter: windDef.mandrelParameters.endDiameter }
+        : {}),
     },
     tow: {
       width: windDef.towParameters.width,
