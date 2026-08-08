@@ -17,7 +17,8 @@ The format is based on Keep a Changelog, and this project follows semantic versi
   bounded by a new machine slip limit μ — `slipLimit` on the machine profile
   (`profileVersion 1.1`, default `0.2`). The planner rejects `frictionLambda > μ` ("would
   slip") and a non-zero value on a cylinder/cone, and reports the turnaround **dwell**
-  demand (flagging when the reversal needs future 4th-axis delivery). The angle path is
+  demand (flagging when the reversal needs future 4th-axis delivery). `fiberpath plan`
+  gains `--profile <path>` so operators can supply a calibrated μ. The angle path is
   solved by an adaptive ODE integrator (converged, platform-stable cap); `λ = 0` is
   byte-identical to the geodesic path. Files omitting `frictionLambda` are unchanged.
 - **Von Kármán nosecone — non-developable surfaces** (#326): a reducing/curved
