@@ -28,8 +28,11 @@ from fiberpath.config.schemas import MandrelParameters, TowParameters
 from .calculations import (
     ConeHelicalKinematics,
     HelicalKinematics,
+    ProfileHelicalKinematics,
     cone_geodesic_theta_deg,
     cone_local_alpha_deg,
+    profile_geodesic_theta_deg,
+    profile_local_alpha_deg,
 )
 from .helpers import Axis
 from .machine import WinderMachine
@@ -207,7 +210,7 @@ def build_helical_developed_path(
     )
 
 
-def _cone_lay_stations(z_from: float, z_to: float) -> list[float]:
+def _lay_stations(z_from: float, z_to: float) -> list[float]:
     """Axial sample stations across a cone laying pass (curved in (z, theta)).
 
     Excludes ``z_from``, includes ``z_to`` exactly, spaced ~1 mm to match the
@@ -306,7 +309,7 @@ def build_cone_helical_developed_path(
                 # alpha(z). The delivery head is re-emitted at every station.
                 lift_lean = sign * PASS_START_LEAN_DEG
                 theta_prev_abs = theta_start_abs
-                for z_sample in _cone_lay_stations(z_start, full_pass_end_mm):
+                for z_sample in _lay_stations(z_start, full_pass_end_mm):
                     theta_abs = cone_geodesic_theta_deg(z_sample, kinematics)
                     mandrel_position += abs(theta_abs - theta_prev_abs)
                     theta_prev_abs = theta_abs
@@ -339,6 +342,139 @@ def build_cone_helical_developed_path(
                 # is the same lock-alignment mechanism the cylinder uses (it already
                 # goes negative on high-wrap cylinder layers in the shipping goldens),
                 # kept deliberately so cones match the hardware-validated behavior.
+                mandrel_position += lock_degrees - lead_out_degrees - (theta_full % 360.0)
+            mandrel_position += start_position_increment
+        mandrel_position += pattern_step_degrees
+
+    # Closing lock move + the final mandrel angle handed to zero_axes.
+    mandrel_position += lock_degrees
+    waypoints.append(
+        Waypoint(
+            z=z,
+            theta=mandrel_position,
+            lean=0.0,
+            lay=False,
+            emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+        )
+    )
+
+    return DevelopedPath(
+        waypoints=tuple(waypoints),
+        emit_initial_near_lock=not spec.skip_initial_near_lock,
+        initial_lock_degrees=lock_degrees,
+        final_angle=mandrel_position,
+        emit_initial_set_position=True,
+        terminal=False,
+    )
+
+
+def build_profile_helical_developed_path(
+    spec: PatternSpec,
+    kinematics: ProfileHelicalKinematics,
+) -> DevelopedPath:
+    """Build the developed-surface path for a helical layer on a non-developable profile.
+
+    Structurally identical to :func:`build_cone_helical_developed_path`; the only
+    differences are that ``theta(z)`` / ``alpha(z)`` come from the *numeric* Clairaut
+    quadrature (``profile_geodesic_theta_deg`` / ``profile_local_alpha_deg``) rather than
+    the cone's closed form, and each pass spans the reachable band ``[0, z_cap]`` (the
+    geodesic turns around at the cap, not the tip) instead of the full length. Reuses
+    :func:`lower_developed_path` unchanged; leaves a bare polar cap (reported on the
+    kinematics as ``cap_diameter``).
+    """
+    lead_out_degrees = spec.lead_out_degrees
+    wind_lead_in_mm = spec.lead_in_mm
+    lock_degrees = spec.lock_degrees
+    pattern_number = spec.pattern_number
+    z_cap = kinematics.z_cap
+
+    num_circuits = kinematics.num_circuits
+    pattern_step_degrees = kinematics.pattern_step_degrees
+    number_of_patterns = num_circuits / pattern_number
+    start_position_increment = spec.skip_index * (360.0 / pattern_number)
+
+    # Full-pass mandrel rotation magnitude over the wound band (same for out/return).
+    theta_full = profile_geodesic_theta_deg(z_cap, kinematics)
+
+    def laying_lean(z: float, sign: int) -> float:
+        # Delivery head tracks the local fiber angle: -(90 - alpha(z)).
+        # minimal: half-angle (surface-tilt) correction deferred to hardware calibration;
+        # on a steep ogive this f(alpha) lean is more approximate (Phase 3, #328).
+        return sign * -1.0 * (90.0 - profile_local_alpha_deg(z, kinematics))
+
+    # (sign, full_pass_end_mm, z_start) per pass direction — band is [0, z_cap].
+    pass_parameters = (
+        (1, z_cap, 0.0),
+        (-1, 0.0, z_cap),
+    )
+
+    waypoints: list[Waypoint] = []
+    mandrel_position = 0.0
+    z = 0.0
+    patterns = int(number_of_patterns)
+    for pattern_index in range(patterns):
+        for in_pattern_index in range(pattern_number):
+            comment = (
+                f"\tPattern: {pattern_index + 1}/{patterns} "
+                f"Circuit: {in_pattern_index + 1}/{pattern_number}"
+            )
+            for pass_index, (sign, full_pass_end_mm, z_start) in enumerate(pass_parameters):
+                z = z_start
+                theta_start_abs = profile_geodesic_theta_deg(z_start, kinematics)
+                # (a) pass start: settle mandrel, zero the delivery-head lean.
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=0.0,
+                        lay=False,
+                        emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                        comment=comment if pass_index == 0 else None,
+                    )
+                )
+                # (b) lift the delivery head to the pass-start lean.
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=sign * PASS_START_LEAN_DEG,
+                        lay=False,
+                        emit=frozenset({Axis.DELIVERY_HEAD}),
+                    )
+                )
+                # (c+d) lay: sample the whole geodesic span at ~1 mm so theta tracks the
+                # curve; the lean ramps over the lead-in, then tracks alpha(z).
+                lift_lean = sign * PASS_START_LEAN_DEG
+                theta_prev_abs = theta_start_abs
+                for z_sample in _lay_stations(z_start, full_pass_end_mm):
+                    theta_abs = profile_geodesic_theta_deg(z_sample, kinematics)
+                    mandrel_position += abs(theta_abs - theta_prev_abs)
+                    theta_prev_abs = theta_abs
+                    z = z_sample
+                    ramp = min(1.0, abs(z_sample - z_start) / wind_lead_in_mm)
+                    lean = lift_lean + ramp * (laying_lean(z_sample, sign) - lift_lean)
+                    waypoints.append(
+                        Waypoint(
+                            z=z,
+                            theta=mandrel_position,
+                            lean=lean,
+                            lay=True,
+                            emit=frozenset({Axis.CARRIAGE, Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                        )
+                    )
+                # (e) lead-out: rotate through the lead-out, drop to pass-start lean.
+                mandrel_position += lead_out_degrees
+                waypoints.append(
+                    Waypoint(
+                        z=z,
+                        theta=mandrel_position,
+                        lean=sign * PASS_START_LEAN_DEG,
+                        lay=False,
+                        emit=frozenset({Axis.MANDREL, Axis.DELIVERY_HEAD}),
+                    )
+                )
+                # Per-pass turnaround dwell — identical formula to the cone/cylinder
+                # builder (the shared, hardware-validated lock-alignment mechanism).
                 mandrel_position += lock_degrees - lead_out_degrees - (theta_full % 360.0)
             mandrel_position += start_position_increment
         mandrel_position += pattern_step_degrees

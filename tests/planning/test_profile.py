@@ -7,12 +7,20 @@ theta(z) — against the known-good cone closed form and against direct quadratu
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from itertools import pairwise
 
 import pytest
+from _equivalence import (
+    assert_profile_circuit_count,
+    assert_profile_coverage,
+    assert_profile_geometry,
+    profile_helical_layer_moves,
+)
 from fiberpath.config.schemas import HelicalLayer, TowParameters
 from fiberpath.planning.calculations import (
+    ProfileHelicalKinematics,
     ProfileReachabilityError,
     _profile_theta_integrand,
     compute_cone_helical_kinematics,
@@ -21,7 +29,10 @@ from fiberpath.planning.calculations import (
     profile_geodesic_theta_deg,
     profile_local_alpha_deg,
 )
+from fiberpath.planning.exceptions import LayerValidationError
+from fiberpath.planning.pattern import helical_spec
 from fiberpath.planning.surface import Cone, VonKarman
+from fiberpath.planning.validators import validate_profile_helical_layer
 
 TOW = TowParameters(width=10.0, thickness=0.3)
 
@@ -209,8 +220,101 @@ def test_shallow_angle_gives_a_large_band_and_small_cap() -> None:
     assert shallow.cap_diameter < steeper.cap_diameter
 
 
+# --- Layer validator (planner-facing surface) --- #
+
+
+def test_validator_returns_kinematics_on_a_valid_layer() -> None:
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    kin = validate_profile_helical_layer(0, _EXAMPLE_LAYER, vk, TOW)
+    assert isinstance(kin, ProfileHelicalKinematics)
+    assert kin.num_circuits == 27
+
+
+def test_validator_re_raises_vanishing_band_as_layer_error() -> None:
+    # ProfileReachabilityError from the kinematics is surfaced as the planner-facing
+    # LayerValidationError (index-prefixed), not the raw ValueError subclass.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    with pytest.raises(LayerValidationError, match="no usable"):
+        validate_profile_helical_layer(2, _layer(89.0), vk, TOW)
+
+
+def test_validator_rejects_lead_in_longer_than_the_wound_band() -> None:
+    # Coverage is checked over the reachable band [0, z_cap] (~207 mm here), not the
+    # full length: a lead-in that exceeds the band must be rejected.
+    vk = VonKarman(base_radius=49.0, length=300.0)
+    layer = HelicalLayer(
+        wind_type="helical",
+        wind_angle=30.0,
+        pattern_number=3,
+        skip_index=1,
+        lock_degrees=360.0,
+        lead_in_mm=250.0,
+        lead_out_degrees=60.0,
+    )
+    with pytest.raises(LayerValidationError, match="leadInMM"):
+        validate_profile_helical_layer(0, layer, vk, TOW)
+
+
 def test_radius_domain_clamps_hold_at_and_beyond_the_ends() -> None:
     vk = VonKarman(base_radius=49.0, length=300.0)
     # Float drift can push z a hair outside [0, L]; radius_at must not raise.
     assert vk.radius_at(-1e-9) == pytest.approx(49.0, abs=1e-6)
     assert vk.radius_at(300.0 + 1e-9) == pytest.approx(0.0, abs=1e-6)
+
+
+# --- Developed path (build + lower) via the equivalence harness --- #
+
+_EXAMPLE_LAYER = _layer(30.0)
+_EXAMPLE_VK = VonKarman(base_radius=49.0, length=300.0)
+
+
+def _example_kinematics():  # type: ignore[no-untyped-def]
+    return compute_profile_helical_kinematics(_EXAMPLE_LAYER, _EXAMPLE_VK, TOW)
+
+
+def test_vk_layer_lowers_to_a_valid_geodesic_program() -> None:
+    kin = _example_kinematics()
+    moves = profile_helical_layer_moves(helical_spec(_EXAMPLE_LAYER), kin)
+    # Geometry (Clairaut re-derived from the emitted IR), coverage, and circuit count.
+    assert_profile_geometry(moves, kin)
+    assert_profile_coverage(_EXAMPLE_LAYER, kin, TOW)
+    assert_profile_circuit_count(moves, kin.num_circuits)
+    # Integer structural gate: cross-platform stable where transcendental coords are not.
+    assert len(moves) == 22552
+
+
+def test_geometry_check_rejects_a_perturbed_clairaut_constant() -> None:
+    # A real build, judged against a kinematics whose Clairaut constant disagrees with
+    # the emitted geometry, must fail — proves the check is not vacuous.
+    kin = _example_kinematics()
+    moves = profile_helical_layer_moves(helical_spec(_EXAMPLE_LAYER), kin)
+    wrong = dataclasses.replace(kin, clairaut_const=kin.clairaut_const + 2.0)
+    with pytest.raises(AssertionError, match="Clairaut"):
+        assert_profile_geometry(moves, wrong)
+
+
+def test_geometry_check_rejects_a_theta_table_missing_the_meridian_factor() -> None:
+    # Build a theta table WITHOUT the sqrt(1+r'^2) meridian factor — a plausible integrand
+    # bug — and confirm the (independent-meridian) geometry check catches the resulting
+    # non-geodesic path. This proves the checker's meridian factor is truly independent.
+    kin = _example_kinematics()
+    c = kin.clairaut_const
+
+    def bad_integrand(z: float) -> float:
+        r = _EXAMPLE_VK.radius_at(z)
+        return c / (r * math.sqrt(r * r - c * c))  # missing * sqrt(1 + r'^2)
+
+    grid = kin.grid_z
+    cum = 0.0
+    bad_theta = [0.0]
+    prev = bad_integrand(grid[0])
+    for i in range(1, len(grid)):
+        cur = bad_integrand(grid[i])
+        cum += 0.5 * (prev + cur) * (grid[i] - grid[i - 1])
+        prev = cur
+        bad_theta.append(math.degrees(cum))
+    bad_kin = dataclasses.replace(kin, cum_theta_deg=tuple(bad_theta))
+
+    moves = profile_helical_layer_moves(helical_spec(_EXAMPLE_LAYER), bad_kin)
+    with pytest.raises(AssertionError, match="Clairaut"):
+        assert_profile_geometry(moves, bad_kin)
