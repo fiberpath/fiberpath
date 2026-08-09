@@ -35,12 +35,20 @@ export const BackendHealthResponseSchema = z.object({
 /**
  * Schema for MandrelParameters object in .wind files (Python backend format)
  */
+/** Von Kármán (LD-Haack) nose profile (schemaVersion 1.2+); type-only discriminator. */
+export const VonKarmanProfileSchema = z.object({
+  type: z.literal("vonKarman"),
+});
+
 export const MandrelParametersSchema = z.object({
   diameter: z.number().positive(),
   windLength: z.number().positive(),
   // Optional small-end diameter of a reducing cone/frustum (schemaVersion 1.1+).
   // Accepted and preserved so cone files round-trip without silent data loss (#344).
   endDiameter: z.number().positive().nullish(),
+  // Optional mandrel surface profile, e.g. a Von Kármán nose (schemaVersion 1.2+).
+  // Accepted and preserved so profile files round-trip without silent data loss (#345).
+  profile: VonKarmanProfileSchema.nullish(),
 });
 
 /**
@@ -74,8 +82,9 @@ export const WindHelicalLayerSchema = z.object({
   leadInMM: z.number().positive(),
   leadOutDegrees: z.number().positive(),
   skipInitialNearLock: z.boolean().optional(),
-  // Non-geodesic friction ratio (schemaVersion 1.3+); 0/absent is the geodesic default.
-  // min(0) mirrors the engine's ge=0 bound so the save gate can't pass a value it rejects.
+  // Non-geodesic friction ratio (schemaVersion 1.3+); absent means geodesic, an
+  // explicit 0 is preserved verbatim. min(0) mirrors the engine's ge=0 bound so
+  // the save gate can't pass a value it rejects.
   frictionLambda: z.number().min(0).optional(),
 });
 

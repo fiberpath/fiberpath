@@ -76,9 +76,9 @@ describe("file-operations service", () => {
     expect(projectSession.isDirty).toBe(false);
   });
 
-  it("openProject refuses a .wind with an unrepresentable mandrel profile", async () => {
-    // A Von Kármán profile (schemaVersion 1.2) the GUI can't model must be blocked, not
-    // silently stripped and planned as a cylinder.
+  it("openProject loads a .wind with a Von Kármán mandrel profile (#345)", async () => {
+    // A VK profile (schemaVersion 1.2) is now representable and round-trips; opening
+    // it must load the profile, not block or silently strip it to a cylinder.
     const vkWind = JSON.stringify({
       schemaVersion: "1.2",
       mandrelParameters: { diameter: 98, windLength: 300, profile: { type: "vonKarman" } },
@@ -91,9 +91,10 @@ describe("file-operations service", () => {
 
     const ok = await fileOps.openProject();
 
-    expect(ok).toBe(false);
-    // The document is left untouched (still the fresh default), not the VK file.
-    expect(projectSession.document.mandrel.diameter).toBe(150);
+    expect(ok).toBe(true);
+    expect(projectSession.document.mandrel.diameter).toBe(98);
+    expect(projectSession.document.mandrel.profile).toEqual({ type: "vonKarman" });
+    expect(projectSession.filePath).toBe("/p/vk.wind");
   });
 
   it("openProject aborts when the user declines the unsaved-changes prompt", async () => {

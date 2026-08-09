@@ -38,16 +38,6 @@ async function loadFromPath(filePath: string): Promise<boolean> {
   try {
     const content = await loadWindFile(filePath);
     const windDef: WindDefinition = JSON.parse(content);
-    // Guard: the GUI project model can't yet represent a mandrel surface `profile`
-    // (e.g. a Von Kármán nose, schemaVersion 1.2). Rather than let the Zod schema
-    // silently strip it and plan the file as a cylinder, refuse to open it and point
-    // to the CLI. (Editing profiles in the GUI is tracked separately.)
-    if (windDef.mandrelParameters?.profile != null) {
-      throw new Error(
-        "This .wind file uses a mandrel surface profile (e.g. a Von Kármán nose) that " +
-          "this version of the app can't edit. Plan it with the FiberPath CLI instead.",
-      );
-    }
     validateData(WindDefinitionSchema, windDef, `.wind file at ${filePath}`);
     projectSession.loadDocument(windDefinitionToDocument(windDef), filePath);
     addRecentFile(filePath);

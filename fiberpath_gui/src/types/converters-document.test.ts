@@ -122,3 +122,84 @@ describe("cone endDiameter round-trip (#344)", () => {
     expect(projectToWindDefinition(doc).schemaVersion).toBe("1.0");
   });
 });
+
+// Regression guard for #345: a Von Kármán nose .wind (mandrelParameters.profile,
+// schemaVersion 1.2) with a non-geodesic helical layer (frictionLambda, 1.3) must
+// survive open -> plan/save without the profile or friction ratio being silently
+// stripped (which planned/exported the nose as a cylinder and dropped frictionLambda).
+const vkFrictionWind: WindDefinition = {
+  schemaVersion: "1.3",
+  mandrelParameters: { diameter: 98, windLength: 300, profile: { type: "vonKarman" } },
+  towParameters: { width: 7, thickness: 0.3 },
+  defaultFeedRate: 500,
+  layers: [
+    {
+      windType: "helical",
+      windAngle: 30,
+      patternNumber: 3,
+      skipIndex: 1,
+      lockDegrees: 360,
+      leadInMM: 20,
+      leadOutDegrees: 60,
+      skipInitialNearLock: false,
+      frictionLambda: 0.15,
+    },
+  ],
+};
+
+describe("Von Kármán profile + frictionLambda round-trip (#345)", () => {
+  it("preserves profile as mandrel.profile on load", () => {
+    const doc = windDefinitionToDocument(vkFrictionWind);
+    expect(doc.mandrel).toEqual({
+      diameter: 98,
+      wind_length: 300,
+      profile: { type: "vonKarman" },
+    });
+  });
+
+  it("preserves frictionLambda as helical.friction_lambda on load", () => {
+    const doc = windDefinitionToDocument(vkFrictionWind);
+    expect(doc.layers[0].helical?.friction_lambda).toBe(0.15);
+  });
+
+  it("emits profile + frictionLambda and bumps schemaVersion to 1.3 on save/plan", () => {
+    const back = projectToWindDefinition(windDefinitionToDocument(vkFrictionWind));
+    expect(back.schemaVersion).toBe("1.3");
+    expect(back.mandrelParameters).toEqual({
+      diameter: 98,
+      windLength: 300,
+      profile: { type: "vonKarman" },
+    });
+    expect(back.layers[0]).toMatchObject({ windType: "helical", frictionLambda: 0.15 });
+  });
+
+  it("full round-trip keeps profile + frictionLambda intact (no data loss)", () => {
+    const back = projectToWindDefinition(windDefinitionToDocument(vkFrictionWind));
+    expect(back.mandrelParameters).toEqual(vkFrictionWind.mandrelParameters);
+    expect(back.layers).toEqual(vkFrictionWind.layers);
+  });
+
+  it("a geodesic VK nose (profile, no friction) stays at schemaVersion 1.2", () => {
+    const geodesic: WindDefinition = {
+      ...vkFrictionWind,
+      schemaVersion: "1.2",
+      layers: [{ windType: "hoop", terminal: true }],
+    };
+    const back = projectToWindDefinition(windDefinitionToDocument(geodesic));
+    expect(back.schemaVersion).toBe("1.2");
+    expect(back.mandrelParameters.profile).toEqual({ type: "vonKarman" });
+  });
+
+  it("preserves profile through the visibleLayerCount preview path", () => {
+    const back = projectToWindDefinition(windDefinitionToDocument(vkFrictionWind), 1);
+    expect(back.mandrelParameters.profile).toEqual({ type: "vonKarman" });
+  });
+
+  it("omits profile/frictionLambda for a plain cylinder (no spurious fields)", () => {
+    const doc = windDefinitionToDocument(sampleWind);
+    expect("profile" in doc.mandrel).toBe(false);
+    const back = projectToWindDefinition(doc);
+    expect("profile" in back.mandrelParameters).toBe(false);
+    expect(back.layers[1]).not.toHaveProperty("frictionLambda");
+  });
+});
