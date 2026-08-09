@@ -1,5 +1,12 @@
 // Project state interfaces matching fiberpath/config/schemas.py
 
+// Von Kármán (LD-Haack) nose profile (schemaVersion 1.2+). Carries only its
+// discriminator; base radius comes from `diameter` and length from `wind_length`
+// (no duplicated dimensions), mirroring the engine's VonKarmanProfile.
+export interface MandrelProfile {
+  type: "vonKarman";
+}
+
 export interface Mandrel {
   diameter: number; // mm
   wind_length: number; // mm
@@ -7,6 +14,10 @@ export interface Mandrel {
   // means a plain cylinder. Preserved on load/save so cone files round-trip
   // without silent data loss (#344).
   end_diameter?: number | null; // mm
+  // Mandrel surface profile (a non-cylindrical surface of revolution, e.g. a Von
+  // Kármán nose; schemaVersion 1.2+). Absent means a plain cylinder. Preserved on
+  // load/save so profile files round-trip without silent data loss (#345).
+  profile?: MandrelProfile | null;
 }
 
 export interface Tow {
@@ -26,6 +37,11 @@ export interface HelicalLayer {
   lead_in_mm: number;
   lead_out_degrees: number;
   skip_initial_near_lock: boolean;
+  // Non-geodesic friction ratio for a helical layer on a mandrel profile
+  // (schemaVersion 1.3+). Absent means geodesic; an explicit 0 is preserved
+  // verbatim (not normalized to absent) so the file round-trips byte-faithfully
+  // without silent data loss (#345).
+  friction_lambda?: number;
 }
 
 export interface SkipLayer {

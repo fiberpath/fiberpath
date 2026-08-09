@@ -4,12 +4,14 @@ import {
   type HoopLayer as GUIHoopLayer,
   type HelicalLayer as GUIHelicalLayer,
   type SkipLayer as GUISkipLayer,
+  type MandrelProfile,
 } from "./project";
 import type {
   WindDefinition,
   HoopLayer,
   HelicalLayer,
   SkipLayer,
+  VonKarmanProfile,
 } from "./wind-schema";
 import type { ProjectDocument } from "./document";
 
@@ -37,6 +39,10 @@ export function convertLayerToWindSchema(
       leadOutDegrees: helicalData?.lead_out_degrees ?? HELICAL_DEFAULTS.lead_out_degrees,
       skipInitialNearLock:
         helicalData?.skip_initial_near_lock ?? HELICAL_DEFAULTS.skip_initial_near_lock,
+      // Emit frictionLambda only when set, so plain geodesic layers stay byte-identical.
+      ...(helicalData?.friction_lambda != null
+        ? { frictionLambda: helicalData.friction_lambda }
+        : {}),
     };
   } else if (layer.type === "skip") {
     const skipData = layer.skip as GUISkipLayer | undefined;
@@ -55,7 +61,12 @@ export function convertLayerToWindSchema(
  */
 export function projectToWindDefinition(
   project: {
-    mandrel: { diameter: number; wind_length: number; end_diameter?: number | null };
+    mandrel: {
+      diameter: number;
+      wind_length: number;
+      end_diameter?: number | null;
+      profile?: MandrelProfile | null;
+    };
     tow: { width: number; thickness: number };
     layers: Layer[];
     defaultFeedRate: number;
@@ -67,14 +78,32 @@ export function projectToWindDefinition(
     : project.layers;
 
   const endDiameter = project.mandrel.end_diameter;
+  const profile = project.mandrel.profile;
+  // Each additive .wind feature raises the minimum schemaVersion; emit the highest
+  // one whose field is present so the file self-describes: frictionLambda (1.3),
+  // then profile (1.2), then a cone small-end (1.1), else a plain 1.0. The fields
+  // are independent here — a helical frictionLambda counts even without a profile
+  // (the backend owns the "friction needs a curved surface" invariant); the GUI's
+  // job is only to tag the version faithfully to what it emits.
+  const hasFrictionLambda = layersToInclude.some(
+    (layer) => layer.type === "helical" && layer.helical?.friction_lambda != null,
+  );
+  const schemaVersion = hasFrictionLambda
+    ? "1.3"
+    : profile != null
+      ? "1.2"
+      : endDiameter != null
+        ? "1.1"
+        : "1.0";
   return {
-    // A cone (endDiameter present) requires schemaVersion 1.1; a plain cylinder
-    // stays 1.0. Emitting endDiameter under 1.0 would be an invalid combination.
-    schemaVersion: endDiameter != null ? "1.1" : "1.0",
+    schemaVersion,
     mandrelParameters: {
       diameter: project.mandrel.diameter,
       windLength: project.mandrel.wind_length,
       ...(endDiameter != null ? { endDiameter } : {}),
+      // Cast bridges the strict internal MandrelProfile to the generated
+      // VonKarmanProfile (which carries an open index signature).
+      ...(profile != null ? { profile: profile as VonKarmanProfile } : {}),
     },
     towParameters: {
       width: project.tow.width,
@@ -112,6 +141,10 @@ export function convertWindSchemaToLayer(
         lead_out_degrees: schemaLayer.leadOutDegrees ?? HELICAL_DEFAULTS.lead_out_degrees,
         skip_initial_near_lock:
           schemaLayer.skipInitialNearLock ?? HELICAL_DEFAULTS.skip_initial_near_lock,
+        // Preserve the non-geodesic friction ratio when present (absent == geodesic).
+        ...(schemaLayer.frictionLambda != null
+          ? { friction_lambda: schemaLayer.frictionLambda }
+          : {}),
       },
     };
   } else if (schemaLayer.windType === "skip") {
@@ -141,6 +174,11 @@ export function windDefinitionToDocument(windDef: WindDefinition): ProjectDocume
       // cylinder documents stay identical (no spurious null field).
       ...(windDef.mandrelParameters.endDiameter != null
         ? { end_diameter: windDef.mandrelParameters.endDiameter }
+        : {}),
+      // Preserve a mandrel surface profile (e.g. a Von Kármán nose) when present so
+      // the file round-trips without silent data loss; omit for a plain cylinder.
+      ...(windDef.mandrelParameters.profile != null
+        ? { profile: windDef.mandrelParameters.profile as MandrelProfile }
         : {}),
     },
     tow: {
