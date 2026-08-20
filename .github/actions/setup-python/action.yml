@@ -40,9 +40,15 @@ runs:
     - name: Create virtual environment
       shell: bash
       run: |
-        if [ -d ".venv" ]; then
+        # A restored cache can hold a .venv whose interpreter symlink is broken
+        # (hosted-Python patch bump or setup-uv install-dir change), which makes
+        # the next `uv pip install` fail. Trust the cache only if the interpreter
+        # actually runs; otherwise recreate it.
+        if [ -x ".venv/bin/python" ] && .venv/bin/python -c "" 2>/dev/null; then
           echo "Using restored .venv from cache"
         else
+          echo "No usable cached venv (missing or broken interpreter); recreating"
+          rm -rf .venv
           uv venv
         fi
 
