@@ -47,9 +47,9 @@ The `AxisMapping` class (in `fiberpath/gcode/dialects.py`) maps logical to physi
 
 ```python
 class AxisMapping:
-    carriage: str          # Physical axis name (e.g., "X")
-    mandrel: str           # Physical axis name (e.g., "A" or "Y")
-    delivery: str          # Physical axis name (e.g., "B" or "Z")
+    carriage: str  # Physical axis name (e.g., "X")
+    mandrel: str  # Physical axis name (e.g., "A" or "Y")
+    delivery: str  # Physical axis name (e.g., "B" or "Z")
     is_rotational_mandrel: bool
     is_rotational_delivery: bool
 ```
@@ -58,11 +58,7 @@ class AxisMapping:
 
 ```python
 MARLIN_XAB_STANDARD = AxisMapping(
-    carriage="X",
-    mandrel="A",
-    delivery="B",
-    is_rotational_mandrel=True,
-    is_rotational_delivery=True
+    carriage="X", mandrel="A", delivery="B", is_rotational_mandrel=True, is_rotational_delivery=True
 )
 ```
 
@@ -80,8 +76,10 @@ The `MarlinDialect` class wraps an `AxisMapping` with Marlin-specific features:
 class MarlinDialect:
     name: str
     mapping: AxisMapping
+
     def prologue(self) -> List[str]:
         """G-code commands at file start (G21, G94)"""
+
     def format_move(self, carriage, mandrel, delivery, feed) -> str:
         """Convert logical coordinates to G-code command"""
 ```
@@ -167,7 +165,7 @@ To support a new controller (e.g., FANUC):
        mandrel="C",  # FANUC uses C for rotation
        delivery="B",
        is_rotational_mandrel=True,
-       is_rotational_delivery=True
+       is_rotational_delivery=True,
    )
    ```
 
@@ -192,11 +190,11 @@ For non-standard setups, create custom mappings:
 
 ```python
 CUSTOM_MAPPING = AxisMapping(
-    carriage="Z",     # Vertical machine
+    carriage="Z",  # Vertical machine
     mandrel="A",
-    delivery="C",     # Different delivery axis
+    delivery="C",  # Different delivery axis
     is_rotational_mandrel=True,
-    is_rotational_delivery=True
+    is_rotational_delivery=True,
 )
 ```
 
