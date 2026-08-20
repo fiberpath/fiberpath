@@ -282,6 +282,8 @@ class StreamingState:
     commands_sent: int
     commands_total: int
     current_command: str
+
+
 # Streaming thread
 while commands:
     send_command(commands[i])
@@ -289,12 +291,14 @@ while commands:
     state.current_command = commands[i]
 # Progress reporter thread (separate)
 while streaming:
-    emit_json({
-        "status": "progress",
-        "commandsSent": state.commands_sent,
-        "commandsTotal": state.commands_total,
-        "command": state.current_command,
-    })
+    emit_json(
+        {
+            "status": "progress",
+            "commandsSent": state.commands_sent,
+            "commandsTotal": state.commands_total,
+            "command": state.current_command,
+        }
+    )
     sleep(0.1)  # 100ms update interval
 ```
 

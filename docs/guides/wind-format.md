@@ -474,6 +474,7 @@ Validation errors are displayed with specific field paths and messages.
 
 ```python
 from fiberpath.config.validator import validate_wind_definition
+
 errors = validate_wind_definition(wind_dict)
 if errors:
     for error in errors:
