@@ -59,8 +59,11 @@ src = ["fiberpath", "fiberpath_cli", "fiberpath_api", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
 
+# Type-check against 3.12: numpy's stubs (>=2.5) use PEP 695 `type` statements
+# that mypy rejects under a 3.11 target. Runtime support for 3.11 stays covered
+# by the Backend Test matrix (requires-python = ">=3.11").
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unused_configs = true
 warn_return_any = true
