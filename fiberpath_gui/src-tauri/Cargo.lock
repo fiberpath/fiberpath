@@ -985,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "fiberpath_gui"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "log",
  "serde",

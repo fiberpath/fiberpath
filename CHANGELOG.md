@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project follows semantic versi
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-07
+
 ### Added
 
 - **Non-geodesic (friction-assisted) Von Kármán winding** (#327): helical layers on a
@@ -33,6 +35,15 @@ The format is based on Keep a Changelog, and this project follows semantic versi
   example is validated by the equivalence harness (no byte golden — transcendental
   coordinates are not bit-stable across platforms). The desktop app preserves an
   unmodelled `profile`/`endDiameter` rather than silently dropping it (#344).
+- **Von Kármán files open and save losslessly in the desktop app** (#345): a `.wind`
+  carrying a `profile` or `frictionLambda` was previously refused on open by a load
+  guard, and would have lost both fields on save (re-planned as a plain cylinder).
+  Both are now threaded through the app's project model and both converter
+  directions, and the app emits the highest `schemaVersion` the content requires
+  (`frictionLambda` → 1.3, `profile` → 1.2, `endDiameter` → 1.1, else 1.0).
+  Fields are omitted when absent, so plain cylinder/geodesic files stay
+  byte-identical. This is data fidelity only — authoring a profile or friction wind
+  from scratch needs a mandrel editor, which is still to come.
 
 ## [0.10.0] - 2026-06-29
 
