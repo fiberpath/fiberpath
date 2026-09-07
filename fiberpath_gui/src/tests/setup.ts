@@ -18,6 +18,26 @@ if (!global.crypto) {
   };
 }
 
+// jsdom implements no Web Animations API. Svelte calls element.animate() when a
+// transition runs, and from 5.57 it does so from a deferred microtask, so the
+// TypeError escapes the test that triggered it and fails the run even though
+// every assertion passes. Hand transitions an inert Animation instead:
+// playState "finished" stops Svelte's rAF loop immediately, and onfinish is
+// left unfired so transitions stay no-ops rather than half-applying.
+if (!Element.prototype.animate) {
+  Element.prototype.animate = () =>
+    ({
+      onfinish: null,
+      oncancel: null,
+      effect: null,
+      playState: "finished",
+      cancel: () => {},
+      finish: () => {},
+      play: () => {},
+      pause: () => {},
+    }) as unknown as Animation;
+}
+
 // Mock window.matchMedia
 Object.defineProperty(window, "matchMedia", {
   writable: true,
