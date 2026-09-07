@@ -36,7 +36,7 @@ hide:
 
     ---
 
-    **Latest Release:** [v0.10.0](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
+    **Latest Release:** [v0.11.0](https://github.com/fiberpath/fiberpath/releases/latest){ target=_blank }
 
     - **Desktop GUI** – Windows, macOS, Linux installers (no Python required)
     - **Python Package** – `pip install fiberpath`
@@ -44,18 +44,18 @@ hide:
 
     [:octicons-arrow-right-24: Installation Guide](getting-started.md)
 
--   :material-new-box:{ .lg .middle } **What's New in v0.10.0**
+-   :material-new-box:{ .lg .middle } **What's New in v0.11.0**
 
     ---
 
-    This release expands what FiberPath can wind and formalizes its formats:
+    This release takes FiberPath off developable surfaces for the first time:
 
-    - **Cone winding** — reducing cones/frustums via an optional `endDiameter`, wound as closed-form geodesics (the first developable surface beyond the cylinder).
-    - **`.wind` is now an open format** — a normative specification with a published, [major-versioned JSON Schema](https://fiberpath.org/schemas/wind/1/wind.schema.json){ target=_blank } and a machine-checkable conformance corpus.
-    - **Machine profiles** — a versioned compatibility contract describing what a controller must support; G-code now emits a self-describing `G21`/`G90`/`G94` preamble.
-    - **Desktop polish** — double-click a `.wind` file to open it, plus branded app icons.
+    - **Von Kármán nosecone** — a curved surface of revolution can now be wound via an optional `mandrelParameters.profile`. Helical layers follow a *numeric* geodesic (the Clairaut relation integrated over the meridian) rather than the cone's closed form.
+    - **Non-geodesic, friction-assisted winding** — an optional `frictionLambda` (λ) lets a pass deviate from the geodesic and climb past the turnaround toward the tip, shrinking the bare polar cap. It is bounded by a new machine `slipLimit` (μ), and the planner rejects a wind that would slip.
+    - **Calibrated machine limits** — `fiberpath plan --profile <path>` supplies a measured μ for your winder.
+    - **Desktop fidelity** — Von Kármán and friction winds now open, edit and save losslessly in the app.
 
-    [:octicons-arrow-right-24: Machine Profile Guide](guides/machine-profile.md)
+    [:octicons-arrow-right-24: `.wind` Format Guide](guides/wind-format.md)
 
 -   :material-book-open-page-variant:{ .lg .middle } **User Guides**
 
