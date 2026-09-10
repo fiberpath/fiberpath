@@ -39,8 +39,8 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
-    "openapi-fetch": "^0.17.0",
-    "zod": "^4.4.3"
+    "ajv": "^8.20.0",
+    "openapi-fetch": "^0.17.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -49,7 +49,6 @@
     "@testing-library/svelte": "^5.4.2",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^5.0.0",
-    "ajv": "^8.20.0",
     "jsdom": "^30.0.0",
     "json-schema-to-typescript": "^16.0.0",
     "stylelint": "^17.13.0",

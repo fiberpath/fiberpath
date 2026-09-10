@@ -352,3 +352,40 @@ describe("Wind Definition Validation", () => {
     });
   });
 });
+
+describe("Engine-parity bounds the JSON Schema cannot express", () => {
+  // fiberpath/planning/validators.py enforces MIN_WIND_ANGLE/MAX_WIND_ANGLE in a
+  // Pydantic validator, so wind-schema.json carries only `exclusiveMinimum: 0`.
+  // Without the parity check these would pass the gate and fail later as a 422.
+  const withAngle = (windAngle: number): WindDefinition => ({
+    schemaVersion: "1.0",
+    mandrelParameters: { diameter: 150, windLength: 800 },
+    towParameters: { width: 12, thickness: 0.25 },
+    defaultFeedRate: 1000,
+    layers: [
+      {
+        windType: "helical",
+        windAngle,
+        patternNumber: 3,
+        skipIndex: 1,
+        lockDegrees: 180,
+        leadInMM: 5,
+        leadOutDegrees: 15,
+      },
+    ],
+  });
+
+  it.each([90, 89.5, 120, 0.5])(
+    "rejects a wind angle of %s, which the schema alone would accept",
+    (angle) => {
+      const result = validateWindDefinition(withAngle(angle));
+      expect(result.valid).toBe(false);
+      expect(result.errors[0].field).toBe("/layers/0/windAngle");
+      expect(result.errors[0].message).toContain("must be between 1° and 89°");
+    },
+  );
+
+  it.each([1, 45, 89])("accepts a wind angle of %s", (angle) => {
+    expect(validateWindDefinition(withAngle(angle)).valid).toBe(true);
+  });
+});

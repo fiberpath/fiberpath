@@ -1,6 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
-import { BackendHealthResponseSchema } from "../lib/schemas";
 import { BROWSER_PREVIEW_MESSAGE, isTauri } from "../lib/tauri";
+
+/**
+ * Shape of the `check_backend_health` Tauri command response. Served over the
+ * Tauri bridge rather than the OpenAPI surface, so it has no generated type.
+ */
+interface BackendHealthResponse {
+  healthy: boolean;
+  version: string | null;
+  errorMessage: string | null;
+}
+
+function isBackendHealthResponse(v: unknown): v is BackendHealthResponse {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.healthy === "boolean" &&
+    (typeof r.version === "string" || r.version === null) &&
+    (typeof r.errorMessage === "string" || r.errorMessage === null)
+  );
+}
 
 export type BackendStatus = "ready" | "checking" | "unavailable" | "unknown";
 
@@ -35,13 +54,14 @@ export class BackendHealth {
     this.status = "checking";
     try {
       const response = await invoke<unknown>("check_backend_health");
-      const parsed = BackendHealthResponseSchema.safeParse(response);
-      if (!parsed.success) {
-        throw new Error(`Invalid response schema: ${parsed.error.message}`);
+      if (!isBackendHealthResponse(response)) {
+        throw new Error(
+          `Invalid response schema: ${JSON.stringify(response)?.slice(0, 200)}`,
+        );
       }
-      this.status = parsed.data.healthy ? "ready" : "unavailable";
-      this.version = parsed.data.version;
-      this.errorMessage = parsed.data.errorMessage;
+      this.status = response.healthy ? "ready" : "unavailable";
+      this.version = response.version;
+      this.errorMessage = response.errorMessage;
     } catch (e) {
       this.status = "unavailable";
       this.version = null;
