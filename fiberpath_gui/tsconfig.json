@@ -11,7 +11,7 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "noEmit": true,
-    "types": ["node", "vite/client", "@testing-library/jest-dom"],
+    "types": ["node", "vite/client", "@testing-library/jest-dom/vitest"],
     "forceConsistentCasingInFileNames": true,
     "strict": true
   },
