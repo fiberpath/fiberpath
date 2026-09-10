@@ -31,7 +31,7 @@ to preview the full rendered site, build it from that repo.
 - **Formatting & linting:** Ruff enforces style, imports, and best practices. Run `uv run ruff check` before committing.
 - **Type checking:** MyPy runs in strict mode across `fiberpath`, `fiberpath_cli`, and `fiberpath_api`. Use `uv run mypy` and prefer adding annotations rather than suppressions.
 - **Tests:** `uv run pytest` exercises all unit/integration suites. Add targeted tests for new planner logic, CLI behavior, or API endpoints.
-- **Docs:** Keep `docs/*.md` in sync with feature work. Significant planner or simulator changes usually deserve updates to `docs/architecture.md` or `docs/planner-math.md`.
+- **Docs:** Keep `docs/*.md` in sync with feature work. Significant planner or simulator changes usually deserve updates to [`docs/architecture/overview.md`](../architecture/overview.md) or [`docs/reference/planner-math.md`](../reference/planner-math.md). A change that moves a roadmap stage should also update [`docs/development/roadmap.md`](roadmap.md).
 - **Dependency hygiene:** Follow `docs/development/dependency-policy.md` for cadence, SLA, and defer/exception handling.
 - **Commit-time automation:** Install and use pre-commit hooks (`pre-commit install`) so baseline Python and GUI checks run before each commit.
 
