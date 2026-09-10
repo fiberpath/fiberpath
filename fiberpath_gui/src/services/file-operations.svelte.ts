@@ -4,7 +4,8 @@ import {
   projectToWindDefinition,
   windDefinitionToDocument,
 } from "../types/converters";
-import { WindDefinitionSchema, validateData, parseError } from "../lib/schemas";
+import { ValidationError, parseError } from "../lib/schemas";
+import { validateWindDefinition } from "../lib/validation";
 import { addRecentFile } from "../lib/recentFiles";
 import { projectSession } from "../state/project-session.svelte";
 import { notifications } from "../state/notifications.svelte";
@@ -38,7 +39,14 @@ async function loadFromPath(filePath: string): Promise<boolean> {
   try {
     const content = await loadWindFile(filePath);
     const windDef: WindDefinition = JSON.parse(content);
-    validateData(WindDefinitionSchema, windDef, `.wind file at ${filePath}`);
+    const { valid, errors } = validateWindDefinition(windDef);
+    if (!valid) {
+      const detail = errors.map((e) => `${e.field}: ${e.message}`).join(", ");
+      throw new ValidationError(
+        `.wind file at ${filePath} validation failed: ${detail}`,
+        errors,
+      );
+    }
     projectSession.loadDocument(windDefinitionToDocument(windDef), filePath);
     addRecentFile(filePath);
     return true;
