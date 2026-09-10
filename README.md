@@ -28,12 +28,12 @@
 
 FiberPath automates the complex process of **filament winding**—wrapping fiber-reinforced composites around mandrels to create lightweight, high-strength cylindrical parts like pressure vessels, pipes, and aerospace structures.
 
-Design multi-layer winding patterns in a visual interface, simulate the full manufacturing process, and stream G-code directly to Marlin-based hardware. FiberPath handles the winding mathematics — hoop and helical path generation, tow coverage, and machine kinematics for cylindrical mandrels — so you can focus on part design.
+Design multi-layer winding patterns in a visual interface, simulate the full manufacturing process, and stream G-code directly to Marlin-based hardware. FiberPath handles the winding mathematics — hoop and helical path generation, tow coverage, and machine kinematics across cylindrical, conical and curved mandrels — so you can focus on part design.
 
 ### Features
 
 - **Visual Layer Editor** – Design winding patterns with live preview
-- **Winding Path Planning** – Automatic hoop, helical, and skip pattern generation for cylindrical mandrels
+- **Winding Path Planning** – Automatic hoop, helical, and skip pattern generation on cylinders, reducing cones, and Von Kármán nose profiles
 - **Hardware Simulation** – Validate motion before manufacturing
 - **Direct Machine Control** – Stream G-code to Marlin controllers with pause/resume
 - **XAB-Native Axis Output** – Standardized rotational-axis output with clear logical axis mapping
@@ -41,7 +41,7 @@ Design multi-layer winding patterns in a visual interface, simulate the full man
 - **Command-Line Tools** – Scriptable workflows for automation and CI/CD
 - **Comprehensive Documentation** – Architecture guides, examples, and API reference
 
-> **Scope & roadmap:** FiberPath currently plans **cylindrical mandrels** with hoop, helical, and skip layers. Non-cylindrical (geodesic) surface support — including tapered and custom mandrels — is planned but not yet implemented.
+> **Scope & roadmap:** FiberPath plans **cylinders**, **reducing cones** (`schemaVersion 1.1`) and **Von Kármán nose profiles** (`1.2`) with hoop, helical and skip layers. Cylinders and cones are *developable*, so their paths are closed-form; the Von Kármán profile is *non-developable* and is solved by integrating the geodesic (Clairaut) relation over the meridian. Optional friction-assisted **non-geodesic** winding (`frictionLambda`, `1.3`) shrinks the bare polar cap a geodesic leaves near the tip. Full tip coverage on steep profiles additionally needs 3-D delivery-eye kinematics, which is hardware-gated — see [#328](https://github.com/fiberpath/fiberpath/issues/328) and the [roadmap](docs/development/roadmap.md).
 
 ## Quick Start
 
