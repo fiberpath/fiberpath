@@ -15,9 +15,10 @@ promised. For features that have been **considered and deferred or rejected**, s
 > surface, lowered through an explicit toolpath representation to G-code, with a documented, versioned open
 > winding-program format.
 
-Today FiberPath plans **cylindrical mandrels** (hoop, helical, and skip layers) and emits Marlin XAB
-G-code. The direction below generalizes that — first by making the internals explicit and data-driven on
-the cylinder, then by extending to non-cylindrical surfaces — without breaking the validated cylinder path.
+Today FiberPath plans **cylinders, reducing cones and Von Kármán nose profiles** (hoop, helical, and skip
+layers, geodesic or friction-assisted) and emits Marlin XAB G-code. The direction below records how that
+was reached — first by making the internals explicit and data-driven on the cylinder, then by extending to
+non-cylindrical and finally non-developable surfaces — without ever breaking the validated cylinder path.
 
 ## Why this is grounded, not aspirational
 
@@ -53,7 +54,7 @@ Built bottom-up so each layer ships value on its own:
 
 ```
 (z, r) mandrel profile  +  declarative layer-stack spec     ── the .wind open format
-        │   surface model: typed analytic segments (Cylinder, Cone; Dome later)
+        │   surface model: typed analytic segments (Cylinder, Cone, VonKarman; Dome later)
         ▼
 unified pattern primitive  (path on the developed surface + coverage pattern + turnaround)
         ▼
@@ -84,13 +85,14 @@ toolpath must be reproduced bit-for-bit (or coverage-equivalent) before and afte
 | 1 | **Motion IR** — typed machine-agnostic toolpath; planner emits it; simulate/plot/metrics/G-code consume it; adopt a single nominal time model (removes today's planner/simulator time divergence) | ✅ Done | [#136](https://github.com/fiberpath/fiberpath/issues/136) |
 | 2 | **Unified pattern primitive** — express hoop/helical/skip as one parametric primitive on the developed cylinder, re-derived to bit-for-bit equality; validators become spec type-checkers | ✅ Done | [#137](https://github.com/fiberpath/fiberpath/issues/137) |
 | 3a | **Cones** — typed `Cone` profile segment; developable closed-form paths; first golden is a straight HPR reducer frustum | ✅ Done | [#138](https://github.com/fiberpath/fiberpath/issues/138) |
-| 3b | **Domes / general surfaces of revolution** — Clairaut + non-geodesic (λ) path solving with measured friction, 3-D delivery-eye kinematics | Longer-horizon (est. 2027+, hardware-gated) | [#139](https://github.com/fiberpath/fiberpath/issues/139) |
+| 3b | **Domes / general surfaces of revolution** — Clairaut + non-geodesic (λ) path solving with measured friction, 3-D delivery-eye kinematics | 🚧 Phases 1–2 shipped in 0.11.0; Phase 3 hardware-gated | [#139](https://github.com/fiberpath/fiberpath/issues/139) |
 
 Notes:
 
-- **Stages 1, 2, and 3a have shipped.** Hoop, helical, and skip are expressed as one declarative pattern
-  primitive on the developed surface that lowers through a single Motion IR path (`fiberpath/planning/`:
-  `pattern.py` defines the primitive, `developed.py` the per-pattern path builders + the one lowering).
+- **Stages 1, 2 and 3a have shipped, and 3b is underway.** Hoop, helical, and skip are expressed as one
+  declarative pattern primitive on the developed surface that lowers through a single Motion IR path
+  (`fiberpath/planning/`: `pattern.py` defines the primitive, `developed.py` the per-pattern path builders
+  + the one lowering).
   The cylinder cut-over reproduces the prior toolpaths **bit-for-bit** (the example goldens are unchanged),
   and the coverage validators are type-checkers over the primitive. **Stage 3a adds cones**: `surface.py`
   models the mandrel as a typed `Cylinder`/`Cone`, a reducing frustum is wound as a **geodesic** (Clairaut,
@@ -101,24 +103,42 @@ Notes:
 - **Time-model calibration** against the real machine is tracked separately and done when hardware time
   allows ([#130](https://github.com/fiberpath/fiberpath/issues/130)); the engine ships with a
   documented nominal estimate until then.
-- Stage 3b is intentionally not broken into sub-issues yet — it starts only when there is real
-  non-cylindrical demand and a machine to validate the friction model on. Straight cones (3a) cover the
-  near-term non-cylindrical need (transitions/reducers); curved (ogive) nose cones are non-developable and
-  fall into the 3b tier.
+- **Stage 3b is split into three phases**, the first two of which shipped in 0.11.0:
+    - *Phase 1 — geodesic path on a curved profile*
+      ([#326](https://github.com/fiberpath/fiberpath/issues/326), done): the first **non-developable**
+      surface. A Von Kármán nose is added as an optional
+      `mandrelParameters.profile` (`schemaVersion 1.2`) and wound by integrating the Clairaut relation over
+      the curved meridian. Because a geodesic turns around at its Clairaut radius, the layer leaves an
+      expected **bare polar cap** near the tip, which the planner reports.
+    - *Phase 2 — non-geodesic winding + friction calibration*
+      ([#327](https://github.com/fiberpath/fiberpath/issues/327), done): an optional `frictionLambda`
+      (λ = k_g/k_n, `schemaVersion 1.3`) lets a pass leave the geodesic and
+      climb past the turnaround, shrinking that cap. It is bounded by a measured machine slip limit μ
+      (`slipLimit`, `profileVersion 1.1`); the planner rejects λ > μ and reports the turnaround dwell
+      demand. `fiberpath plan --profile` supplies a calibrated μ. λ = 0 is byte-identical to the geodesic.
+    - *Phase 3 — delivery kinematics for steep profiles*
+      ([#328](https://github.com/fiberpath/fiberpath/issues/328), open): the radial cross-feed 4th axis
+      needed to close the remaining cap. **Hardware-gated** — it needs a
+      machine to validate against, so it starts when there is one.
+- Straight cones (3a) cover the near-term non-cylindrical need (transitions/reducers); true **domes** remain
+  future 3b work beyond the Von Kármán profile already supported.
 
 ## Open winding-program format
 
 There is no open, documented interchange format for winding programs — commercial tools keep theirs
-proprietary and open hobby tools are cylinder-only and machine-specific. FiberPath intends to publish one,
-as a cross-cutting deliverable:
+proprietary and open hobby tools are cylinder-only and machine-specific. FiberPath publishes one, as a
+cross-cutting deliverable. **This has shipped:**
 
 - The **`.wind` spec** is the flagship, stable, versioned format (where a community would form); the Motion
-  IR is documented as a secondary, separately-versioned format; emitted G-code is treated as a build
-  artifact, not a standard.
-- Concrete groundwork: relax the schema version constraint so the format can evolve additively
-  ([#140](https://github.com/fiberpath/fiberpath/issues/140)); promote the format guide to a
-  normative versioned SPEC, add a versioned JSON-Schema `$id`, and build a conformance corpus
-  (`valid/` / `invalid/` / golden outputs) ([#141](https://github.com/fiberpath/fiberpath/issues/141)).
+  IR is documented as a secondary, separately-versioned format ([Motion IR reference](../reference/motion-ir.md));
+  emitted G-code is treated as a build artifact, not a standard.
+- The schema-version constraint was relaxed so the format can evolve additively
+  ([#140](https://github.com/fiberpath/fiberpath/issues/140), done). The
+  [format guide](../guides/wind-format.md) is now a normative SPEC with RFC-2119 conformance requirements,
+  the media type `application/vnd.fiberpath.wind+json`, a major-versioned JSON-Schema `$id` that resolves at
+  <https://fiberpath.org/schemas/wind/1/wind.schema.json>, and a `conformance/` corpus of `valid/` /
+  `invalid/` cases enforced by `tests/conformance/`
+  ([#141](https://github.com/fiberpath/fiberpath/issues/141), done).
 - Evolution policy: additive-only within a major version; tolerant readers ignore unknown fields; breaking
   changes bump the major. The existing `windAngle` convention (measured from the mandrel axis: 0° axial,
   90° hoop) is normative.
@@ -127,18 +147,18 @@ as a cross-cutting deliverable:
 
 Tracked under the org-migration epic
 ([#142](https://github.com/fiberpath/fiberpath/issues/142)), front-loaded because the documentation
-URL, schema `$id`, badges, and dependency tooling all depend on the project's home:
+URL, schema `$id`, badges, and dependency tooling all depend on the project's home. **This has shipped:**
 
-- Migrate the repository to a dedicated `fiberpath` GitHub org, restoring the release pipeline — chiefly
-  the PyPI trusted publisher, which is keyed on the repository owner/name
-  ([#131](https://github.com/fiberpath/fiberpath/issues/131)).
-- Stand up an org-pages documentation site and point the owned `fiberpath.org` domain at it
-  ([#133](https://github.com/fiberpath/fiberpath/issues/133)); update badges/links
-  ([#132](https://github.com/fiberpath/fiberpath/issues/132)).
-- Add an org `.github` community-health repository
-  ([#134](https://github.com/fiberpath/fiberpath/issues/134)) and switch dependency updates from
+- The repository moved to the dedicated `fiberpath` GitHub org and the release pipeline was restored —
+  chiefly the PyPI trusted publisher, which is keyed on the repository owner/name
+  ([#131](https://github.com/fiberpath/fiberpath/issues/131), done).
+- An org-pages documentation site is live with the owned `fiberpath.org` domain pointed at it
+  ([#133](https://github.com/fiberpath/fiberpath/issues/133), done); badges and links were updated
+  ([#132](https://github.com/fiberpath/fiberpath/issues/132), done).
+- The org `.github` community-health repository exists
+  ([#134](https://github.com/fiberpath/fiberpath/issues/134), done) and dependency updates moved from
   Dependabot to org-level Renovate, keeping security alerts
-  ([#135](https://github.com/fiberpath/fiberpath/issues/135)).
+  ([#135](https://github.com/fiberpath/fiberpath/issues/135), done).
 
 The desktop GUI stays in the monorepo for now; splitting it into its own repository has been considered and
 deferred (the engine refactor benefits from atomic cross-cutting changes, and the bundled-CLI coupling is
