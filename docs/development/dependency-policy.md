@@ -50,15 +50,16 @@ dependencies block the same as runtime ones, because the build chain produces th
 | --- | --- | --- | --- |
 | Rust (`cargo audit`) | vulnerability with CVSS ≥ 7.0 | CVSS < 7.0, unscored (loud `::warning::`), informational `unmaintained`/`unsound`/`yanked` | `scripts/ci/cargo_audit_gate.py` computes the CVSS 3.x base score from the RustSec vector and fails closed on a missing/malformed report |
 | Python (`pip-audit`) | **any** advisory | — | pip-audit exit code. **Deliberately stricter**: pip-audit has no severity filter and PyPI/OSV advisories often carry no CVSS, so tiering is not implementable. Use the allowlist to accept a triaged Medium/Low. |
-| Node (`npm audit`) | severity `high` or `critical` | `moderate`/`low` (silent — npm exits 0 below the level) | `npm audit --audit-level=high` exit code |
+| Node (`npm audit`) | severity `high` or `critical`, or any unrecognised severity | `moderate`/`low`/`info` | `scripts/ci/npm_audit_gate.py` reads the `npm audit --json` report and counts each advisory once (not every package it propagates through). It fails closed on a missing/malformed report, a report format other than `auditReportVersion` 2, or a package npm flags at high/critical (or an unrecognised severity) that does not trace through its `via` chain to a parsed advisory at least as severe; an ignored advisory still accounts for its chain |
 
 Allowlists — an accepted advisory is waived where the tool supports it, and every entry must carry
 the advisory ID, a one-line justification, and a re-check trigger (an upstream event or date):
 
 - **Rust:** `[advisories] ignore` in `fiberpath_gui/src-tauri/audit.toml` (create on first use).
 - **Python:** `--ignore-vuln <ID>` flags on the pip-audit step in `dependency-audit.yml`.
-- **Node:** no native ignore exists. On first need, gate via a small post-processor over
-  `npm-audit.json` (mirror `cargo_audit_gate.py`); do not lower `--audit-level`.
+- **Node:** npm has no native ignore, so `--ignore <GHSA-ID>` flags on the gate step in
+  `dependency-audit.yml` waive it in `npm_audit_gate.py`. An `--ignore` that no longer matches
+  any advisory raises a `::warning::` so the entry gets removed.
 
 Record the *reasoning* for each accepted advisory in this document (see
 [Accepted advisories](#accepted-advisories-reasoning-record)); the *live state* is whatever the
@@ -99,6 +100,15 @@ solely for anything listed here.**
   late 2024. They are structurally pinned by `tauri` — not upgradable from this repo. These are
   informational warnings (no CVSS), reported by every audit run and non-blocking under the gate.
   Re-check when Tauri moves off GTK3 on Linux (tracked upstream in tauri-apps/tauri).
+- **`braces` <= 3.0.3 — stack-exhaustion DoS on deeply nested patterns (GHSA-vfj7-8cjw-p6xm,
+  high, CVSS 7.5).** The DoS needs an attacker-supplied brace pattern, and the only thing that
+  reaches `braces` here is `stylelint` (via `globby`/`fast-glob`/`micromatch`) expanding the
+  `src/**/*.css` pattern written in this repo. No patched release exists (3.0.3 is the latest
+  published version), and dropping the dependent, as `@vitest/ui` was dropped for `flatted` in
+  v0.5.4, is not an option: CSS lint runs in CI and pre-commit, and current `stylelint`
+  (17.16.0) still depends on the same chain.
+  Re-check when `braces` publishes a fix: lock-file maintenance picks it up and the gate's
+  stale-`--ignore` warning says to remove this entry.
 
 Resolved entries for the record: `glib` GHSA-wrw7-89jp-8q8g and `rand` 0.7.3 GHSA-cq8v-f236-94qc
 (both from the pre-2026 lockfile) no longer apply — the pinning chains left the tree with the
@@ -108,7 +118,7 @@ Tauri 2.x migration; `quick-xml` RUSTSEC-2026-0194/0195 (CVSS 7.5) were remediat
 ## Required Tooling
 
 - Python: `uv`, `pip-audit`
-- Node: `npm audit`
+- Node: `npm audit` + the gate `scripts/ci/npm_audit_gate.py` (unit-tested in `tests/ci/`)
 - Rust: `cargo audit` + the CVSS gate `scripts/ci/cargo_audit_gate.py` (unit-tested in `tests/ci/`)
 - Automation: Renovate for version updates (org preset `github>fiberpath/renovate-config`, configured via `renovate.json`); Dependabot **security** alerts/updates remain enabled; scheduled dependency audit workflow (`.github/workflows/dependency-audit.yml`)
 
