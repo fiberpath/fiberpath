@@ -67,7 +67,7 @@ Reusable setup steps used across multiple workflows:
 - Triggers: Push to main, PRs to main, weekly schedule, manual dispatch
 - Jobs:
   1. Python dependency audit (pip-audit)
-  2. Node dependency audit (npm audit --audit-level=high)
+  2. Node dependency audit (npm audit with high/critical gate + allowlist)
   3. Rust dependency audit (cargo audit with CVSS >= 7 gate)
 - Artifacts: JSON reports retained for 30 days
 - Status: [![Dependency Audit](https://github.com/USER/fiberpath/actions/workflows/dependency-audit.yml/badge.svg)](https://github.com/USER/fiberpath/actions/workflows/dependency-audit.yml)

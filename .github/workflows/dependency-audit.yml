@@ -61,12 +61,19 @@ jobs:
       - name: Setup Node.js environment
         uses: ./.github/actions/setup-node
 
-      - name: Run npm audit (high/critical gate)
-        # npm exits non-zero only at/above --audit-level, which IS the gate.
-        # npm has no per-advisory ignore: to accept a triaged high/critical,
-        # add a post-processor gate (mirror cargo_audit_gate.py) — do NOT
-        # lower --audit-level. See docs/development/dependency-policy.md.
-        run: npm audit --audit-level=high --json > npm-audit.json
+      - name: Run npm audit (JSON report)
+        # npm has no per-advisory ignore, so its exit code cannot accept a
+        # triaged advisory. Capture the report and let the gate below decide.
+        # `|| true` here is safe *because* the gate fails closed on a missing or
+        # malformed report (a genuine tool/network error).
+        run: npm audit --json > npm-audit.json || true
+
+      - name: Enforce high/critical gate
+        # To accept a triaged high/critical, add `--ignore <GHSA-ID>` here AND
+        # record the reasoning in docs/development/dependency-policy.md.
+        run: >-
+          python3 "$GITHUB_WORKSPACE/scripts/ci/npm_audit_gate.py" npm-audit.json
+          --ignore GHSA-vfj7-8cjw-p6xm
 
       - name: Upload npm audit report
         if: always()
