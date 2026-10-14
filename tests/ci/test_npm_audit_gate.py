@@ -93,8 +93,9 @@ def test_propagated_entries_count_as_one_advisory(capsys: pytest.CaptureFixture[
     assert "npm audit: 1 advisories." in capsys.readouterr().out
 
 
-def test_ignore_accepts_listed_advisory() -> None:
+def test_ignore_accepts_listed_advisory(capsys: pytest.CaptureFixture[str]) -> None:
     assert gate.evaluate(_braces_report(), {BRACES}) == 0
+    assert "::warning::" not in capsys.readouterr().out
 
 
 def test_ignore_does_not_cover_another_advisory() -> None:
@@ -138,6 +139,34 @@ def test_via_cycle_is_traced_without_recursing_forever() -> None:
     report["vulnerabilities"]["a"] = {"severity": "high", "via": ["b", "braces"]}
     report["vulnerabilities"]["b"] = {"severity": "high", "via": ["a"]}
     assert gate.evaluate(report, {BRACES}) == 0
+
+
+def test_critical_on_ignored_chain_package_fails_closed() -> None:
+    # A new critical advisory on micromatch, outside ``via``: its string link to the
+    # ignored high braces advisory must not account for a critical package.
+    report = _braces_report()
+    report["vulnerabilities"]["micromatch"] = {
+        "severity": "critical",
+        "via": ["braces"],
+        "advisories": [_advisory("GHSA-eeee", "critical", "micromatch")],
+    }
+    assert gate.evaluate(report, {BRACES}) == 1
+
+
+def test_critical_linked_into_ignored_high_chain_fails_closed() -> None:
+    report = _braces_report()
+    report["vulnerabilities"]["x"] = {"severity": "critical", "via": ["micromatch"]}
+    assert gate.evaluate(report, {BRACES}) == 1
+
+
+def test_critical_linked_only_to_moderate_package_fails_closed() -> None:
+    report = _report(
+        {
+            "m": {"severity": "moderate", "via": [_advisory("GHSA-mmmm", "moderate")]},
+            "x": {"severity": "critical", "via": ["m"]},
+        }
+    )
+    assert gate.evaluate(report, set()) == 1
 
 
 def test_id_collision_keeps_the_blocking_advisory() -> None:

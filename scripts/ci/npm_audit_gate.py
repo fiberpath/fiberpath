@@ -14,8 +14,9 @@ same advisory propagated up the tree.
 
 Fails closed on a missing/malformed report, on any ``auditReportVersion`` other
 than 2, and when a package npm flags at high/critical (or an unknown severity) does
-not trace through its ``via`` links to a parsed high/critical advisory — a shape
-change must not read as a clean audit, even while another advisory is ignored.
+not trace through its ``via`` links to a parsed advisory at least as severe,
+ignored or not. A hidden advisory no more severe than one already reachable from
+the same package cannot be detected.
 """
 
 from __future__ import annotations
@@ -26,6 +27,10 @@ import sys
 from pathlib import Path
 
 NON_BLOCKING = {"moderate", "low", "info"}
+# npm sets a package's severity to the highest of its advisories, so a package must
+# trace to an advisory at least this severe. An unrecognised severity ranks above
+# critical as an advisory and needs only a blocking one as a package.
+RANK = {"moderate": 0, "low": 0, "info": 0, "high": 1, "critical": 2}
 
 
 def advisory_id(advisory: dict) -> str:
@@ -58,25 +63,28 @@ def evaluate(report: dict, ignore: set[str]) -> int:
             if kept is None or kept.get("severity") in NON_BLOCKING:
                 advisories[adv_id] = via
 
-    def explained(name: str, seen: set[str]) -> bool:
-        """Whether a package traces through string ``via`` links to a blocking advisory."""
+    def explained(name: str, need: int, seen: set[str]) -> bool:
+        """Whether a package traces through string ``via`` links to an advisory of rank >= need."""
         entry = vulnerabilities.get(name)
         if not isinstance(entry, dict) or name in seen:
             return False
         seen.add(name)
         for via in entry.get("via", []):
-            if isinstance(via, dict) and via.get("severity") not in NON_BLOCKING:
+            if isinstance(via, dict) and RANK.get(via.get("severity"), 3) >= need:
                 return True
-            if isinstance(via, str) and explained(via, seen):
+            if isinstance(via, str) and explained(via, need, seen):
                 return True
         return False
 
     # Every package npm flags at high/critical (or an unknown severity) must be
-    # accounted for by a parsed advisory; otherwise the parser missed one.
+    # accounted for by a parsed advisory at least as severe; otherwise the parser
+    # missed one. A hidden advisory no more severe than one already reachable
+    # from the same package cannot be detected this way.
     unexplained = sorted(
         name
         for name, entry in vulnerabilities.items()
-        if entry.get("severity") not in NON_BLOCKING and not explained(name, set())
+        if entry.get("severity") not in NON_BLOCKING
+        and not explained(name, RANK.get(entry.get("severity"), 1), set())
     )
 
     blocking: list[tuple[str, dict]] = []
@@ -115,8 +123,8 @@ def evaluate(report: dict, ignore: set[str]) -> int:
         return 1
     if unexplained:
         print(
-            f"\n::error::{len(unexplained)} high/critical package(s) trace to no parsed "
-            f"high/critical advisory: {', '.join(unexplained)}"
+            f"\n::error::{len(unexplained)} flagged package(s) trace to no parsed advisory "
+            f"as severe as the package: {', '.join(unexplained)}"
         )
         return 1
     print("\nNo unaccepted high/critical advisories. Gate passed.")
