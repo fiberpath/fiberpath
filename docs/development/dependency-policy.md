@@ -94,11 +94,14 @@ artifacts, and informational warnings never block by policy, so they only get an
 reasoning is non-obvious. Remove an entry when its re-check trigger fires. **Do not block a release
 solely for anything listed here.**
 
-- **gtk3-rs binding stack — `unmaintained`/`unsound` warnings (RUSTSEC-2024-04xx series;
-  `glib` 0.18 unsound iterator, RUSTSEC-2024-0429).** Tauri 2.x on Linux renders via GTK3, whose
-  Rust bindings (`gtk`/`gdk`/`atk`/`gdk-pixbuf`/… 0.18) were declared unmaintained upstream in
-  late 2024. They are structurally pinned by `tauri` — not upgradable from this repo. These are
-  informational warnings (no CVSS), reported by every audit run and non-blocking under the gate.
+- **`glib` 0.18 — unsound `VariantStrIter` iterator impls (RUSTSEC-2024-0429,
+  GHSA-wrw7-89jp-8q8g).** Tauri 2.x on Linux renders via GTK3, and every crate in its Linux
+  chain requires gtk-rs `^0.18`, which holds `glib` at 0.18; the fix is in 0.20. Not upgradable
+  from this repo (#376). `cargo audit` reports it as an informational `unsound` warning (no
+  CVSS), non-blocking under the gate; Dependabot alert #3 is the same advisory. The gtk-rs 0.18
+  `unmaintained` advisories (RUSTSEC-2024-0412 `gdk`, -0413 `atk` and -0415 `gtk` among them)
+  were withdrawn on 2026-08-14 when gtk3-rs development resumed, so audit runs no longer report
+  them.
   Re-check when Tauri moves off GTK3 on Linux (tracked upstream in tauri-apps/tauri).
 - **`braces` <= 3.0.3 — stack-exhaustion DoS on deeply nested patterns (GHSA-vfj7-8cjw-p6xm,
   high, CVSS 7.5).** The DoS needs an attacker-supplied brace pattern, and the only thing that
@@ -110,10 +113,10 @@ solely for anything listed here.**
   Re-check when `braces` publishes a fix: lock-file maintenance picks it up and the gate's
   stale-`--ignore` warning says to remove this entry.
 
-Resolved entries for the record: `glib` GHSA-wrw7-89jp-8q8g and `rand` 0.7.3 GHSA-cq8v-f236-94qc
-(both from the pre-2026 lockfile) no longer apply — the pinning chains left the tree with the
-Tauri 2.x migration; `quick-xml` RUSTSEC-2026-0194/0195 (CVSS 7.5) were remediated by bumping
-`plist` to 1.10.0 rather than accepted.
+Resolved entries for the record: `rand` 0.7.3 GHSA-cq8v-f236-94qc (from the pre-2026 lockfile)
+no longer applies — its pinning chain left the tree with the Tauri 2.x migration; `quick-xml`
+RUSTSEC-2026-0194/0195 (CVSS 7.5) were remediated by bumping `plist` to 1.10.0 rather than
+accepted.
 
 ## Required Tooling
 
