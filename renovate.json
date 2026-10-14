@@ -1,4 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>fiberpath/renovate-config"]
+  "extends": ["github>fiberpath/renovate-config"],
+  "lockFileMaintenance": {
+    "automerge": true,
+    "platformAutomerge": false
+  }
 }
