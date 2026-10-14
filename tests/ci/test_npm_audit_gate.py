@@ -33,13 +33,8 @@ def _advisory(ghsa: str, severity: str, name: str = "pkg") -> dict:
     }
 
 
-def _report(vulnerabilities: dict, **counts: int) -> dict:
-    # npm's metadata counts vulnerable *packages* per severity.
-    return {
-        "auditReportVersion": 2,
-        "metadata": {"vulnerabilities": {"high": 0, "critical": 0, **counts}},
-        "vulnerabilities": vulnerabilities,
-    }
+def _report(vulnerabilities: dict) -> dict:
+    return {"auditReportVersion": 2, "vulnerabilities": vulnerabilities}
 
 
 def _braces_report() -> dict:
@@ -50,8 +45,7 @@ def _braces_report() -> dict:
             "braces": {"severity": "high", "via": [_advisory(BRACES, "high", "braces")]},
             "micromatch": {"severity": "high", "via": ["braces"]},
             "stylelint": {"severity": "high", "via": ["micromatch"]},
-        },
-        high=3,
+        }
     )
 
 
@@ -68,13 +62,23 @@ def test_blocks_on_high() -> None:
 
 
 def test_blocks_on_critical() -> None:
-    report = _report({"a": {"via": [_advisory("GHSA-aaaa", "critical")]}}, critical=1)
+    report = _report({"a": {"via": [_advisory("GHSA-aaaa", "critical")]}})
     assert gate.evaluate(report, set()) == 1
+
+
+def test_ignored_advisory_does_not_hide_another_critical() -> None:
+    # The deployed configuration: braces is always ignored.
+    report = _braces_report()
+    report["vulnerabilities"]["x"] = {
+        "severity": "critical",
+        "via": [_advisory("GHSA-cccc", "critical")],
+    }
+    assert gate.evaluate(report, {BRACES}) == 1
 
 
 @pytest.mark.parametrize("severity", ["moderate", "low", "info"])
 def test_below_threshold_does_not_block(severity: str) -> None:
-    report = _report({"a": {"via": [_advisory("GHSA-aaaa", severity)]}})
+    report = _report({"a": {"severity": severity, "via": [_advisory("GHSA-aaaa", severity)]}})
     assert gate.evaluate(report, set()) == 0
 
 
@@ -104,12 +108,45 @@ def test_stale_ignore_warns_but_passes(capsys: pytest.CaptureFixture[str]) -> No
     assert f"--ignore {BRACES} matched nothing" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("severity", ["high", "critical"])
-def test_unparsed_count_fails_closed(severity: str) -> None:
-    # npm flags a package, but its advisory is not where the parser looks.
-    entry = {"severity": severity, "advisories": [{"severity": severity}]}
-    report = _report({"a": entry}, **{severity: 1})
+@pytest.mark.parametrize(
+    "entry",
+    [
+        # Advisory outside ``via``, where the parser does not look.
+        {"severity": "critical", "advisories": [{"severity": "critical"}]},
+        # ``via`` string naming a package that is not in the report.
+        {"severity": "high", "via": ["ghost"]},
+        # ``via`` as a bare string rather than a list.
+        {"severity": "critical", "via": "GHSA-cccc"},
+        # Severity unrecognised at package level, nothing behind it.
+        {"severity": "High", "via": []},
+    ],
+)
+def test_untraced_package_fails_closed_while_braces_ignored(entry: dict) -> None:
+    report = _braces_report()
+    report["vulnerabilities"]["x"] = entry
+    assert gate.evaluate(report, {BRACES}) == 1
+
+
+def test_high_package_with_only_a_moderate_advisory_fails_closed() -> None:
+    report = _report({"a": {"severity": "high", "via": [_advisory("GHSA-aaaa", "moderate")]}})
     assert gate.evaluate(report, set()) == 1
+
+
+def test_via_cycle_is_traced_without_recursing_forever() -> None:
+    # npm can link packages to each other; the chain still ends at braces.
+    report = _braces_report()
+    report["vulnerabilities"]["a"] = {"severity": "high", "via": ["b", "braces"]}
+    report["vulnerabilities"]["b"] = {"severity": "high", "via": ["a"]}
+    assert gate.evaluate(report, {BRACES}) == 0
+
+
+def test_id_collision_keeps_the_blocking_advisory() -> None:
+    low = {"name": "y", "severity": "low"}
+    critical = {"name": "z", "severity": "critical"}
+    report = _braces_report()
+    report["vulnerabilities"]["y"] = {"severity": "low", "via": [low]}
+    report["vulnerabilities"]["z"] = {"severity": "critical", "via": [critical]}
+    assert gate.evaluate(report, {BRACES}) == 1
 
 
 @pytest.mark.parametrize("version", [1, 3, None])
@@ -124,10 +161,8 @@ def test_registry_error_fails_closed() -> None:
     assert gate.evaluate(error, set()) == 1
 
 
-def test_missing_metadata_fails_closed() -> None:
-    report = _report({})
-    del report["metadata"]
-    assert gate.evaluate(report, set()) == 1
+def test_missing_vulnerabilities_fails_closed() -> None:
+    assert gate.evaluate({"auditReportVersion": 2}, set()) == 1
 
 
 def test_main_fails_closed_on_malformed_report(tmp_path: Path) -> None:

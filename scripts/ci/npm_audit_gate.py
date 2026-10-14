@@ -3,8 +3,9 @@
 
 Fails (exit 1) if any advisory of severity ``high`` or ``critical`` is present and
 not waived with ``--ignore <GHSA-ID>``. ``moderate``/``low``/``info`` are reported
-but do not block; any other severity value blocks. An ignored advisory that no
-longer appears is flagged so its allowlist entry gets removed.
+but do not block; any other severity value blocks unless its advisory is ignored.
+An ignored advisory that no longer appears is flagged so its allowlist entry gets
+removed.
 
 Why this exists: npm has no per-advisory ignore, so ``--audit-level=high`` cannot
 accept a triaged advisory that has no fixed version upstream. Only advisory objects
@@ -12,8 +13,9 @@ in ``via`` are counted; string entries name another vulnerable package and are t
 same advisory propagated up the tree.
 
 Fails closed on a missing/malformed report, on any ``auditReportVersion`` other
-than 2, and when npm's own high/critical count is non-zero but no high/critical
-advisory was parsed — a shape change must not read as a clean audit.
+than 2, and when a package npm flags at high/critical (or an unknown severity) does
+not trace through its ``via`` links to a parsed high/critical advisory — a shape
+change must not read as a clean audit, even while another advisory is ignored.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ import json
 import sys
 from pathlib import Path
 
-BLOCKING = {"high", "critical"}
 NON_BLOCKING = {"moderate", "low", "info"}
 
 
@@ -42,16 +43,41 @@ def evaluate(report: dict, ignore: set[str]) -> int:
         print("::error::npm audit report is not auditReportVersion 2", file=sys.stderr)
         return 1
     vulnerabilities = report.get("vulnerabilities")
-    counts = report.get("metadata", {}).get("vulnerabilities")
-    if not isinstance(vulnerabilities, dict) or not isinstance(counts, dict):
-        print("::error::npm audit report missing 'vulnerabilities'/'metadata'", file=sys.stderr)
+    if not isinstance(vulnerabilities, dict):
+        print("::error::npm audit report missing 'vulnerabilities'", file=sys.stderr)
         return 1
 
     advisories: dict[str, dict] = {}
     for entry in vulnerabilities.values():
         for via in entry.get("via", []):
-            if isinstance(via, dict):
-                advisories.setdefault(advisory_id(via), via)
+            if not isinstance(via, dict):
+                continue
+            adv_id = advisory_id(via)
+            # On an id collision, keep the advisory that would block.
+            kept = advisories.get(adv_id)
+            if kept is None or kept.get("severity") in NON_BLOCKING:
+                advisories[adv_id] = via
+
+    def explained(name: str, seen: set[str]) -> bool:
+        """Whether a package traces through string ``via`` links to a blocking advisory."""
+        entry = vulnerabilities.get(name)
+        if not isinstance(entry, dict) or name in seen:
+            return False
+        seen.add(name)
+        for via in entry.get("via", []):
+            if isinstance(via, dict) and via.get("severity") not in NON_BLOCKING:
+                return True
+            if isinstance(via, str) and explained(via, seen):
+                return True
+        return False
+
+    # Every package npm flags at high/critical (or an unknown severity) must be
+    # accounted for by a parsed advisory; otherwise the parser missed one.
+    unexplained = sorted(
+        name
+        for name, entry in vulnerabilities.items()
+        if entry.get("severity") not in NON_BLOCKING and not explained(name, set())
+    )
 
     blocking: list[tuple[str, dict]] = []
     ignored: list[tuple[str, dict]] = []
@@ -79,7 +105,7 @@ def evaluate(report: dict, ignore: set[str]) -> int:
         print(f"\nAccepted via --ignore, not blocking ({len(ignored)}):")
         show(ignored)
     if below:
-        print(f"\nBelow threshold — moderate/low, not blocking ({len(below)}):")
+        print(f"\nBelow threshold — moderate/low/info, not blocking ({len(below)}):")
         show(below)
     for adv_id in sorted(ignore - advisories.keys()):
         print(f"::warning::--ignore {adv_id} matched nothing — remove it from the allowlist")
@@ -87,10 +113,11 @@ def evaluate(report: dict, ignore: set[str]) -> int:
     if blocking:
         print(f"\n::error::{len(blocking)} high/critical advisory(ies) not accepted — failing.")
         return 1
-    flagged = sum(counts.get(severity, 0) for severity in BLOCKING)
-    if flagged and not ignored:
-        # npm counts high/critical packages that no parsed advisory accounts for.
-        print(f"\n::error::npm reports {flagged} high/critical package(s) but no advisory parsed.")
+    if unexplained:
+        print(
+            f"\n::error::{len(unexplained)} high/critical package(s) trace to no parsed "
+            f"high/critical advisory: {', '.join(unexplained)}"
+        )
         return 1
     print("\nNo unaccepted high/critical advisories. Gate passed.")
     return 0
