@@ -50,7 +50,7 @@ dependencies block the same as runtime ones, because the build chain produces th
 | --- | --- | --- | --- |
 | Rust (`cargo audit`) | vulnerability with CVSS ≥ 7.0 | CVSS < 7.0, unscored (loud `::warning::`), informational `unmaintained`/`unsound`/`yanked` | `scripts/ci/cargo_audit_gate.py` computes the CVSS 3.x base score from the RustSec vector and fails closed on a missing/malformed report |
 | Python (`pip-audit`) | **any** advisory | — | pip-audit exit code. **Deliberately stricter**: pip-audit has no severity filter and PyPI/OSV advisories often carry no CVSS, so tiering is not implementable. Use the allowlist to accept a triaged Medium/Low. |
-| Node (`npm audit`) | severity `high` or `critical` | `moderate`/`low` | `scripts/ci/npm_audit_gate.py` reads the `npm audit --json` report, counts each advisory once (not every package it propagates through), and fails closed on a missing/malformed report |
+| Node (`npm audit`) | severity `high` or `critical` | `moderate`/`low` | `scripts/ci/npm_audit_gate.py` reads the `npm audit --json` report, counts each advisory once (not every package it propagates through), blocks on an unrecognised severity, and fails closed on a missing/malformed report, a report format other than `auditReportVersion` 2, or a high/critical count from npm that no parsed advisory accounts for |
 
 Allowlists — an accepted advisory is waived where the tool supports it, and every entry must carry
 the advisory ID, a one-line justification, and a re-check trigger (an upstream event or date):

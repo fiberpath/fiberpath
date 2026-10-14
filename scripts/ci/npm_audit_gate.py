@@ -2,14 +2,18 @@
 """Enforce a high/critical gate over an ``npm audit --json`` report, with an allowlist.
 
 Fails (exit 1) if any advisory of severity ``high`` or ``critical`` is present and
-not waived with ``--ignore <GHSA-ID>``. Lower severities are reported but do not
-block. An ignored advisory that no longer appears is flagged so its allowlist entry
-gets removed.
+not waived with ``--ignore <GHSA-ID>``. ``moderate``/``low``/``info`` are reported
+but do not block; any other severity value blocks. An ignored advisory that no
+longer appears is flagged so its allowlist entry gets removed.
 
 Why this exists: npm has no per-advisory ignore, so ``--audit-level=high`` cannot
 accept a triaged advisory that has no fixed version upstream. Only advisory objects
 in ``via`` are counted; string entries name another vulnerable package and are the
-same advisory propagated up the tree. A missing/malformed report fails closed.
+same advisory propagated up the tree.
+
+Fails closed on a missing/malformed report, on any ``auditReportVersion`` other
+than 2, and when npm's own high/critical count is non-zero but no high/critical
+advisory was parsed — a shape change must not read as a clean audit.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import sys
 from pathlib import Path
 
 BLOCKING = {"high", "critical"}
+NON_BLOCKING = {"moderate", "low", "info"}
 
 
 def advisory_id(advisory: dict) -> str:
@@ -31,9 +36,15 @@ def advisory_id(advisory: dict) -> str:
 
 def evaluate(report: dict, ignore: set[str]) -> int:
     """Print an audit summary and return the intended process exit code."""
+    # Only the v2 shape (npm 7+) is understood; anything else could hide
+    # advisories where this parser does not look, so fail closed.
+    if report.get("auditReportVersion") != 2:
+        print("::error::npm audit report is not auditReportVersion 2", file=sys.stderr)
+        return 1
     vulnerabilities = report.get("vulnerabilities")
-    if not isinstance(vulnerabilities, dict):
-        print("::error::npm audit report missing 'vulnerabilities'", file=sys.stderr)
+    counts = report.get("metadata", {}).get("vulnerabilities")
+    if not isinstance(vulnerabilities, dict) or not isinstance(counts, dict):
+        print("::error::npm audit report missing 'vulnerabilities'/'metadata'", file=sys.stderr)
         return 1
 
     advisories: dict[str, dict] = {}
@@ -46,7 +57,7 @@ def evaluate(report: dict, ignore: set[str]) -> int:
     ignored: list[tuple[str, dict]] = []
     below: list[tuple[str, dict]] = []
     for adv_id, adv in sorted(advisories.items()):
-        if adv.get("severity") not in BLOCKING:
+        if adv.get("severity") in NON_BLOCKING:
             below.append((adv_id, adv))
         elif adv_id in ignore:
             ignored.append((adv_id, adv))
@@ -75,6 +86,11 @@ def evaluate(report: dict, ignore: set[str]) -> int:
 
     if blocking:
         print(f"\n::error::{len(blocking)} high/critical advisory(ies) not accepted — failing.")
+        return 1
+    flagged = sum(counts.get(severity, 0) for severity in BLOCKING)
+    if flagged and not ignored:
+        # npm counts high/critical packages that no parsed advisory accounts for.
+        print(f"\n::error::npm reports {flagged} high/critical package(s) but no advisory parsed.")
         return 1
     print("\nNo unaccepted high/critical advisories. Gate passed.")
     return 0
