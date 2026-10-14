@@ -101,11 +101,14 @@ solely for anything listed here.**
   informational warnings (no CVSS), reported by every audit run and non-blocking under the gate.
   Re-check when Tauri moves off GTK3 on Linux (tracked upstream in tauri-apps/tauri).
 - **`braces` <= 3.0.3 — stack-exhaustion DoS on deeply nested patterns (GHSA-vfj7-8cjw-p6xm,
-  high, CVSS 7.5).** No patched release exists (3.0.3 is the latest published version). It
-  reaches the tree only as a dev dependency of `stylelint` (via `globby`/`fast-glob`/
-  `micromatch`), which expands glob patterns written in this repo, never untrusted input, and
-  ships in no build output. Re-check when `braces` publishes a fix: lock-file maintenance picks
-  it up and the gate's stale-`--ignore` warning says to remove this entry.
+  high, CVSS 7.5).** The DoS needs an attacker-supplied brace pattern, and the only thing that
+  reaches `braces` here is `stylelint` (via `globby`/`fast-glob`/`micromatch`) expanding the
+  `src/**/*.css` pattern written in this repo. No patched release exists (3.0.3 is the latest
+  published version), and dropping the dependent, as `@vitest/ui` was dropped for `flatted` in
+  v0.5.4, is not an option: CSS lint runs in CI and pre-commit, and current `stylelint`
+  (17.16.0) still depends on the same chain.
+  Re-check when `braces` publishes a fix: lock-file maintenance picks it up and the gate's
+  stale-`--ignore` warning says to remove this entry.
 
 Resolved entries for the record: `glib` GHSA-wrw7-89jp-8q8g and `rand` 0.7.3 GHSA-cq8v-f236-94qc
 (both from the pre-2026 lockfile) no longer apply — the pinning chains left the tree with the
