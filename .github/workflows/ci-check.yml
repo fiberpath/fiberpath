@@ -56,7 +56,7 @@ jobs:
               - "fiberpath_api/**"
               - "fiberpath_cli/**"
               - "tests/**"
-              - "scripts/ci/*.py"
+              - "scripts/**/*.py"
               - "pyproject.toml"
               - "uv.lock"
               - "setup.cfg"
